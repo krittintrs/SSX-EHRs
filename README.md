@@ -1,5 +1,4 @@
-# xss-ehr
-
+# SSX-EHRs
 ## References
 - Scheme 4: 
 - Scheme 5: https://github.com/xuehuan-yang/VFPPBA
