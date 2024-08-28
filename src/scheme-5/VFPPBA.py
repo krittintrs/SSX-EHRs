@@ -432,8 +432,8 @@ def main():
                 print("M_input:    ", m)
                 print("M_output_1: ", M_output_1)
                 print("M_output_2: ", M_output_2)
-                encrypt(m)
-                decrypt(M_output_1)
+                # encrypt(m)
+                # decrypt(M_output_1)
 
                 sttot, retot, enctot, dec1tot, autot, trtot, dec2tot = sttot + setuptime, retot + registertime, enctot + enctime, dec1tot + dec1time, autot + authorizetime, trtot + transformtime, dec2tot + dec2time
                 print("sttot:", sttot)
