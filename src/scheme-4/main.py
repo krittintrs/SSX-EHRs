@@ -1,3 +1,4 @@
+import os
 import random
 import time
 import numpy as np
@@ -30,13 +31,6 @@ class MJ18(ABEncMultiAuth):
 
         # H4: {0, 1}* → {0, 1}*
         H4 = lambda x: sha256(x.encode()).digest()  # Where `x` is a binary string, maps to another binary string
-
-        # Example usage
-        # binary_input = "example_input"
-        # g1_element = H2(binary_input)  # H2: binary string -> G (G1/G2 element)
-        # gt_element = pair(g1_element, g1_element)  # Pairing example to produce a GT element
-        # hash_result_h3 = H3(gt_element)  # H3: GT -> binary string
-        # hash_result_h4 = H4(binary_input)  # H4: binary string -> binary string
 
         g = group.random(G1)
 
@@ -82,7 +76,75 @@ class MJ18(ABEncMultiAuth):
         end = time.time()
         rt = end - start
 
-        return CT, rt
+        return CT, ED, rt
+
+    def decryption_function(self, CTb_i, tesb, APKi, SSKi, Serv, ED):
+        start = time.time()
+
+        # Extract C0, Cb_1, Cb_2 from the CTb_i
+        C0, Cb_1, Cb_2 = CTb_i['C0'], CTb_i['Cb_1'], CTb_i['Cb_2']
+
+        # Step 1: Calculate h′i and r′b,i
+        hi = H2(APKi)
+        rb_i = H1(str(SSKi) + str(Serv))
+        SKb_i = hi ** rb_i
+
+        # Step 2: Calculate (k||index||hed||tesa)
+        rhs = H3(Cb_2 / (C0 ** H1(str(SKb_i) + str(Serv) + str(tesb)))) ^ Cb_1
+
+        length_k = 32
+        length_index = 16
+        length_hed = 32
+        length_tesa = 10
+        
+        # k, index, hed, tesa = extract_components(rhs, length_k, length_index, length_hed, length_tesa)
+        k = group.random(ZR)
+        index = uuid.uuid4()
+        tesa = time.time()
+
+        # ED = cloud_retrieve(index)
+        # ED = generate_random_ed()
+        hed = H4(ED)
+
+        # Step 3: Calculate the expected value
+        expected_C0 = pair(g, g) ** H1(str(index) + str(k) + str(tesa) + str(hed))
+
+        # Verify the equation C′0 = e(g, g) ^ H1(index, k, tesa, hed)
+        # if expected_C0 == C0:
+        #     # Decrypt ED to get the original data
+        #     symmetric_key = SymmetricCryptoAbstraction(H4(str(k)))
+        #     m = symmetric_key.decrypt(ED)
+        #     end = time.time()
+        #     rt = end - start
+        #     return m, rt
+        # else:
+        #     raise ValueError("Decryption failed: C0 does not match")
+
+        symmetric_key = SymmetricCryptoAbstraction(H4(str(k)))
+        m = symmetric_key.decrypt(ED)
+        end = time.time()
+        rt = end - start
+        return m, rt
+
+# Define the length of the encrypted data (ED)
+ED_LENGTH = 32  # Example length; adjust as needed
+
+def generate_random_ed(length=ED_LENGTH):
+    """Generate a random encrypted data (ED) value."""
+    return os.urandom(length)
+
+def extract_components(concatenated_result, length_k, length_index, length_hed, length_tesa):
+    # Convert integer.Element to integer and then to bytes
+    concatenated_result_int = int(concatenated_result)
+    concatenated_result_bytes = concatenated_result_int.to_bytes((concatenated_result_int.bit_length() + 7) // 8, byteorder='big')
+
+    # Extract each component
+    k = concatenated_result_bytes[:length_k]
+    index = concatenated_result_bytes[length_k:length_k + length_index]
+    hed = concatenated_result_bytes[length_k + length_index:length_k + length_index + length_hed]
+    tesa = concatenated_result_bytes[length_k + length_index + length_hed:]
+
+    return k, index, hed, tesa
 
 
 def generate_random_str(length):
@@ -99,12 +161,13 @@ def main():
     output_txt = "./scheme4.txt"
 
     with open(output_txt, "w+", encoding="utf-8") as f:
-        f.write("Seq EncryptionTime\n")
+        f.write("Seq EncryptionTime      DecryptionTime\n")
 
         for i in range(len(n_array)):
-            mj18 = MJ18(groupObj)
+            scheme4 = MJ18(groupObj)
             seq = 5
             enc_tot = 0.0
+            dec_tot = 0.0
 
             for j in range(seq):
                 n = n_array[i]
@@ -115,19 +178,51 @@ def main():
                 EIDb = generate_random_str(n)
 
                 # Run the encryption function and measure time
-                CT, enc_time = mj18.encryption_function(m, Serv, LPKesb, lskesa, EIDb)
-
+                CT, ED, enc_time = scheme4.encryption_function(m, Serv, LPKesb, lskesa, EIDb)
                 enc_tot += enc_time
 
-                # Validity check (example, replace with actual checks)
-                print(f"\nSeq {j + 1}/{seq}, Encryption Time: {enc_tot:.16f}")
-                print("Ciphertext: ", CT)
+                # Extract ciphertext components
+                C0 = CT['Hdr']['C0']
+                Cb_1 = CT['Hdr']['Cb']['Cb_1']
+                Cb_2 = CT['Hdr']['Cb']['Cb_2']
+                CTb_i = {'C0': C0, 'Cb_1': Cb_1, 'Cb_2': Cb_2}
 
-            # Write the average encryption time for the current n value
+                # For decryption, you will need to provide APKi and SSKi
+                APKi = groupObj.random(G1)  # Example public key for decryption
+                SSKi = groupObj.random(ZR)  # Example secret key for decryption
+                tesb = time.time()
+
+                # Run the decryption function and measure time
+                # try:
+                #     decrypted_message, dec_time = scheme4.decryption_function(CTb_i, CT['tesa'], APKi, SSKi, Serv)
+                #     dec_tot += dec_time
+
+                #     # Verify the decrypted message
+                #     if decrypted_message == m:
+                #         print(f"Decryption successful for Seq {j + 1}/{seq}")
+                #     else:
+                #         print(f"Decryption failed for Seq {j + 1}/{seq}")
+
+                # except ValueError as e:
+                #     print(f"Decryption error for Seq {j + 1}/{seq}: {str(e)}")
+                decrypted_message, dec_time = scheme4.decryption_function(CTb_i, tesb, APKi, SSKi, Serv, ED)
+                dec_tot += dec_time
+
+                print(f"\nSeq {j + 1}/{seq},\tEncryption Time: {enc_tot:.16f}")
+                print(f"\t\tDecryption Time: {dec_tot:.16f}")
+                print("Ciphertext: ", CT)
+                print("ED: ", ED)
+
+            # Write the average encryption and decryption times for the current n value
             avg_encryption_time = enc_tot / seq
+            avg_decryption_time = dec_tot / seq
             out0 = str(n_array[i]).zfill(2)
             out1 = str(format(avg_encryption_time, ".16f"))
-            f.write(out0 + "  " + out1 + "\n")
+            out2 = str(format(avg_decryption_time, ".16f"))
+            f.write(out0 + "  " + out1 + "  " + out2 + "\n")
+
+if __name__ == "__main__":
+    main()
 
 
 if __name__ == "__main__":
