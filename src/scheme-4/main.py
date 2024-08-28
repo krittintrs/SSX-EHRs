@@ -79,11 +79,11 @@ class MJ18(ABEncMultiAuth):
 
         return SDi, rt
     
-    def encryption_function(self, m, ESa, ESb):
+    # encrypt by ESa
+    def encryption_function(self, m, ESa, EIDb, LPKesb):
         start = time.time()
 
-        EIDa, lskesa = ESa['EID'], ESa['lsk']
-        EIDb, LPKesb, Serv = ESb['EID'], ESb['LPK'], ESb['Serv']
+        EIDa, lskesa, Serv = ESa['EID'], ESa['lsk'], ESa['Serv']
 
         # Step 1:
         heid_b = self.H2(EIDb)
@@ -142,11 +142,10 @@ class MJ18(ABEncMultiAuth):
 
         return CT, ED, rt
 
-    def sign_request_message(self, MServ, ESa, ESb, SDi):
+    # sign by SDi, send to ESb
+    def sign_request_message(self, MServ, SDi, EIDa, LPKesb):
         start = time.time()
 
-        EIDa = ESa['EID']
-        LPKesb, W = ESb['LPK'], ESb['W']
         lski, LPKi = SDi['lsk'], SDi['LPK']
 
         # 1. SDi generates the shared secret key SSKi
@@ -162,7 +161,7 @@ class MJ18(ABEncMultiAuth):
 
         # 4. SDi chooses current timestamps ti and calculates thetai and signature σi
         ti = time.time()
-        thetai = self.H1(W, ti, MServ, TSKi, SSKi, APKi, PIDi, EIDa)
+        thetai = self.H1(self.W, ti, MServ, TSKi, SSKi, APKi, PIDi, EIDa)
         w = self.group.random(ZR)  # w could be some global or predefined value
         sigmai = aski + w * thetai
 
@@ -181,7 +180,8 @@ class MJ18(ABEncMultiAuth):
         
         return msgi, rt
 
-    def verify_message(self, msgi, ESb):
+    # verify by ESb
+    def verify_request_message(self, msgi, ESb):
         start = time.time()
 
         MServ, APKi, PIDi, ti, sigmai, EIDa = msgi['MServ'], msgi['APKi'], msgi['PIDi'], msgi['ti'], msgi['sigmai'], msgi['EIDa']
@@ -221,18 +221,18 @@ class MJ18(ABEncMultiAuth):
         print('Verification succeeded. Message accepted.')
         return True, rt
 
-    def transform(self, CT, ESa, ESb, SDi, msgi):
+    # transform by ESb
+    def transform(self, CT, ESb, LPKesa, LPKi, APKi):
         start = time.time()
 
+        # extract CT
         Serv, EIDa, Hdr, tesa = CT['Serv'], CT['EIDa'], CT['Hdr'], CT['tesa']
         C0 = Hdr['C0']
         Cb_1_k, Cb_1_index, Cb_1_hed, Cb_1_tesa = Hdr['Cb_1_k'], Hdr['Cb_1_index'], Hdr['Cb_1_hed'], Hdr['Cb_1_tesa']
         Cb_2 = Hdr['Cb_2']
 
-        LPKesa = ESa['LPK']
+        # extract ESb
         EIDb, lskesb = ESb['EID'], ESb['lskesb']
-        LPKi = SDi['LPK']
-        APKi = msgi['APKi']
 
         # 1. Compute RSK'a,b, r'a,b and SK'a,b
         RSK_prime_a_b = LPKesa ** lskesb
@@ -269,13 +269,12 @@ class MJ18(ABEncMultiAuth):
 
         return CTb_to_i, tesb, rt
     
-    def decryption_function(self, CTb_to_i, tesb, ESb, SDi, msgi):
+    # decrypt by SDi
+    def decryption_function(self, CTb_to_i, tesb, SDi, LPKesb, APKi):
         start = time.time()
 
         C_prime_0, Cb_1_k, Cb_1_index, Cb_1_hed, Cb_1_tesa, C_prime_b_2 = CTb_to_i['C_prime_0'], CTb_to_i['Cb_1_k'], CTb_to_i['Cb_1_index'], CTb_to_i['Cb_1_hed'], CTb_to_i['Cb_1_tesa'], CTb_to_i['C_prime_b_2']
-        LPKesb, Serv = ESb['LPK'], ESb['Serv']
-        lski = SDi['lsk']
-        APKi = msgi['APKi']
+        lski, Serv = SDi['lsk'], SDi['Serv']
 
         SSKi = LPKesb ** lski
 
