@@ -98,11 +98,6 @@ class MJ18(ABEncMultiAuth):
         symmetric_key = SymmetricCryptoAbstraction(self.H4(k))
         ED = symmetric_key.encrypt(m)
         
-        print('########## ENC ##########')
-        # print('m:      ', m)
-        # print('ED:     ', ED)
-        # print('CLOUD > ', self.file_on_cloud)
-        
         # Step 3:
         index = self.group.random(ZR)  # Use random ZR
         self.file_on_cloud[str(index)] = ED  # Ensure index is a string
@@ -118,20 +113,15 @@ class MJ18(ABEncMultiAuth):
         hash_result = self.H3(pair(heid_b, yb) ** r)
         Cb_1_k = integer(int(k)) ^ hash_result
         Cb_1_index = integer(int(index)) ^ hash_result
-        Cb_1_hed = integer(hed) ^ hash_result
+        Cb_1_hed = bytes_to_integer_element(hed) ^ hash_result
         Cb_1_tesa = float_to_int_elem(tesa) ^ hash_result
-
-        print('>>> PAIN START HERE (ENC) <<<')
-        print('k:      ', len(str(k)), k)
-        print('index:  ', len(str(index)), index)
-        print('hed:    ', len(str(hed)), hed, type(hed))
-        print('tesa:   ', len(str(tesa)), tesa)
         
-        # print('hash_result:    ', len(str(hash_result)), hash_result)
-        # print('Cb_1_k:    ', len(str(Cb_1_k)), Cb_1_k)
-        # print('Cb_1_index:', len(str(Cb_1_index)), Cb_1_index)
-        # print('Cb_1_hed:  ', Cb_1_hed)
-        # print('Cb_1_tesa: ', Cb_1_tesa)
+        print('>>> PAIN START HERE (ENC) <<<')
+        # print('k:      ', len(str(k)), k)
+        # print('index:  ', len(str(index)), index)
+        print('hed:    ', len(str(hed)), hed, type(hed))
+        print('hed_int: ', bytes_to_integer_element(hed))
+        # print('tesa:   ', len(str(tesa)), tesa)
         
         Cb_1 = Cb_1_k + Cb_1_index + Cb_1_hed + Cb_1_tesa
         Cb_2 = self.H2(C0, Cb_1) ** r
@@ -324,28 +314,29 @@ class MJ18(ABEncMultiAuth):
         ED = self.file_on_cloud.get(str(index))  # Ensure index is a string
         expected_C0_prime = pair(self.g, self.g) ** self.H1(index, k, tesa, hed)
 
-        print('########## DEC ##########')
+        # print('########## DEC ##########')
         # print('ED:     ', ED)
         # print('CLOUD > ', self.file_on_cloud)
-        print('>>> PAIN START HERE (DEC) <<<')
-        actual_k = self.group.init(ZR, int(k))
-        print('k:      ', len(str(k)), k)
-        print('index:  ', len(str(index)), index)
-        print('hed:    ', len(str(hed)), hed, type(hed))
-        print('tesa:   ', len(str(tesa)), tesa)
-        # print('hash_result:    ', len(str(hash_result)), hash_result)
-        # print('Cb_1_k:    ', len(str(Cb_1_k)), Cb_1_k)
-        # print('Cb_1_index:', len(str(Cb_1_index)), Cb_1_index)
-        # print('Cb_1_hed:  ', Cb_1_hed)
-        # print('Cb_1_tesa: ', Cb_1_tesa)
 
         if expected_C0_prime.__str__() == C_prime_0.__str__():
             print('equal')
-            symmetric_key = SymmetricCryptoAbstraction(self.H4(k))
-            m = symmetric_key.decrypt(ED)
         else:
-            print('not equal')
+            print('@@@@@@@@@@@@@ NOT EQUAL IDIOT @@@@@@@@@@@@@')
+            print('expect_C0p: ', expected_C0_prime)
+            print('C0p:        ', C_prime_0)
+            print('>>> PAIN START HERE (DEC) <<<')
+            # print('k:      ', len(str(k)), k)
+            # print('index:  ', len(str(index)), index)
+            print('hed:    ', len(str(hed)), hed, type(hed))
+            print('hed_int: ', hed_output)
+            # print('tesa:   ', len(str(tesa)), tesa)
+
             m = False
+        
+        symmetric_key = SymmetricCryptoAbstraction(self.H4(k))
+        m_bytes = symmetric_key.decrypt(ED)
+        m = m_bytes.decode('utf-8')
+        print('m_out:  ', m, type(m))
 
         end = time.time()
         rt = end - start
@@ -358,8 +349,14 @@ def integer_element_to_bytes(int_elem):
     # Calculate the length of bytes required to represent the integer
     byte_length = (int_value.bit_length() + 7) // 8
     
-    # Convert the integer to bytes
-    return int_value.to_bytes(byte_length, byteorder='big')
+    # Convert the integer to bytes, ensure it is properly zero-padded
+    return int_value.to_bytes(byte_length, byteorder='big', signed=False)
+
+def bytes_to_integer_element(bytes_data):
+    # Convert bytes to integer
+    int_value = int.from_bytes(bytes_data, byteorder='big')
+    
+    return integer(int_value)
 
 # Declare the scale factor once
 scale_factor = 1e9  # Adjust the scale factor as needed for precision
@@ -407,7 +404,7 @@ def main():
 
         for i in range(len(n_array)):
             scheme4 = MJ18(groupObj)
-            seq = 1
+            seq = 5
             reg_tot, enc_tot, sgn_tot, vrf_tot, trf_tot, dec_tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
             for j in range(seq):
@@ -458,13 +455,13 @@ def main():
 
                 if not m_output:
                     print(f'Decryption ERROR (C`0 not equal) for n, seq: {n}, {j}')
-                else:
-                    print(f'Decryption SUCCESS 1')
+                # else:
+                #     print(f'Decryption SUCCESS 1')
 
                 if m_output != m:
                     print(f'Decryption FAILED for n, seq: {n}, {j}')
-                else:
-                    print(f'Decryption SUCCESS 2')
+                # else:
+                #     print(f'Decryption SUCCESS 2')
 
                 print('M_input:    ', m)
                 print('M_output_1: ', m_output)
