@@ -109,8 +109,8 @@ class MJ18(ABEncMultiAuth):
         hed = self.H4(ED)
 
         # Step 4:
-        # tesa = time.time()
-        tesa = self.group.random(ZR)
+        tesa = time.time()
+        # tesa = self.group.random(ZR)
         r = self.H1(index, k, tesa, hed)
         C0 = self.g ** r
 
@@ -119,7 +119,7 @@ class MJ18(ABEncMultiAuth):
         Cb_1_k = integer(int(k)) ^ hash_result
         Cb_1_index = integer(int(index)) ^ hash_result
         Cb_1_hed = integer(hed) ^ hash_result
-        Cb_1_tesa = integer(int(tesa)) ^ hash_result
+        Cb_1_tesa = float_to_int_elem(tesa) ^ hash_result
 
         print('>>> PAIN START HERE (ENC) <<<')
         print('k:      ', len(str(k)), k)
@@ -206,11 +206,11 @@ class MJ18(ABEncMultiAuth):
         lskesb = ESb['lsk']
 
         # 1. Check the freshness of the timestamp ti -> assume fresh enough
-        # if not is_timestamp_fresh(ti):
-        #     print('Timestamp is not fresh. Discarding message.')
-        #     end = time.time()
-        #     rt = end - start
-        #     return False, rt
+        if not is_timestamp_fresh(ti):
+            print('Timestamp is not fresh. Discarding message.')
+            end = time.time()
+            rt = end - start
+            return False, rt
 
         # Compute TSK'i = (APKi)^lskesb
         TSK_prime_i = APKi ** lskesb
@@ -272,8 +272,7 @@ class MJ18(ABEncMultiAuth):
         SKb_i = hi ** rb_i
 
         # 3. Compute the transformation key T Kb→i
-        # tesb = time.time()
-        tesb = self.group.random(ZR)
+        tesb = time.time()
         T_Kb_to_i = SK_prime_a_b * (self.g ** self.H1(SKb_i, Serv, tesb))
 
         # 4. Compute transformed ciphertext components
@@ -289,12 +288,6 @@ class MJ18(ABEncMultiAuth):
             'Cb_1_tesa': Cb_1_tesa,
             'C_prime_b_2': C_prime_b_2
         }
-
-        # print('########## Transform ##########')
-        # print('Cb_1_k:    ', Cb_1_k)
-        # print('Cb_1_index:', Cb_1_index)
-        # print('Cb_1_hed:  ', Cb_1_hed)
-        # print('Cb_1_tesa: ', Cb_1_tesa)
 
         end = time.time()
         rt = end - start
@@ -325,7 +318,7 @@ class MJ18(ABEncMultiAuth):
         k = self.group.init(ZR, int(k_output)) 
         index = self.group.init(ZR, int(index_output))
         hed = integer_element_to_bytes(hed_output)
-        tesa = self.group.init(ZR, int(tesa_output))
+        tesa = int_elem_to_float(int(tesa_output))
 
         # Step 3: Calculate the expected value
         ED = self.file_on_cloud.get(str(index))  # Ensure index is a string
@@ -358,6 +351,27 @@ class MJ18(ABEncMultiAuth):
         rt = end - start
         return m, rt
 
+def integer_element_to_bytes(int_elem):
+    # Convert integer.Element to a standard Python integer
+    int_value = int(int_elem)
+    
+    # Calculate the length of bytes required to represent the integer
+    byte_length = (int_value.bit_length() + 7) // 8
+    
+    # Convert the integer to bytes
+    return int_value.to_bytes(byte_length, byteorder='big')
+
+# Declare the scale factor once
+scale_factor = 1e9  # Adjust the scale factor as needed for precision
+
+def float_to_int_elem(value):
+    # Convert a float to an integer element
+    scaled_value = int(value * scale_factor)
+    return integer(scaled_value)
+
+def int_elem_to_float(int_elem):
+    # Convert an integer element back to a float
+    return int_elem / scale_factor
 
 def is_timestamp_fresh(ti, threshold=1):
     """
@@ -372,23 +386,6 @@ def is_timestamp_fresh(ti, threshold=1):
     """
     current_time = time.time()  # Get the current timestamp
     return (current_time - ti) <= threshold  # Check if within the threshold
-
-def integer_element_to_bytes(int_elem):
-    # Convert integer.Element to a standard Python integer
-    int_value = int(int_elem)
-    
-    # Calculate the length of bytes required to represent the integer
-    byte_length = (int_value.bit_length() + 7) // 8
-    
-    # Convert the integer to bytes
-    return int_value.to_bytes(byte_length, byteorder='big')
-
-# Define the length of the encrypted data (ED)
-ED_LENGTH = 32  # Example length; adjust as needed
-
-def generate_random_ed(length=ED_LENGTH):
-    '''Generate a random encrypted data (ED) value.'''
-    return os.urandom(length)
 
 def generate_random_str(length):
     random_str = ''

@@ -42,3 +42,34 @@ print("Integer.Element:", int_elem)
 print("Recovered int value (from Integer.Element):", recovered_int_value)
 print("Recovered bytes (from int):", recovered_bytes)
 print("Conversion successful:", original_bytes == recovered_bytes)
+
+import time
+from charm.core.math.integer import integer
+
+def float_to_integer_element(timestamp):
+    # Convert the float timestamp to an integer
+    # Choose a high precision scaling factor to retain accuracy
+    scale_factor = 1e9  # Use a higher precision scaling factor
+    return integer(int(timestamp * scale_factor))
+
+def integer_element_to_float(int_elem):
+    # Convert integer.Element back to float
+    scale_factor = 1e9  # Use the same scaling factor as before
+    return float(int(int_elem)) / scale_factor
+
+# Original timestamp
+timestamp = time.time()
+print("Original timestamp:", timestamp)
+
+# Convert timestamp to integer.Element
+int_elem = float_to_integer_element(timestamp)
+print("Integer.Element:", int_elem)
+
+# Convert integer.Element back to timestamp
+recovered_timestamp = integer_element_to_float(int_elem)
+print("Recovered timestamp:", recovered_timestamp)
+
+# Exact equality check
+is_equal = timestamp == recovered_timestamp
+print("Equal:", is_equal)
+
