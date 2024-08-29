@@ -2,7 +2,6 @@ import os
 import random
 import time
 import numpy as np
-import uuid
 from charm.toolbox.pairinggroup import PairingGroup, ZR, G1, G2, GT, pair
 from charm.toolbox.hash_module import Hash
 from charm.toolbox.symcrypto import SymmetricCryptoAbstraction
@@ -95,26 +94,44 @@ class MJ18(ABEncMultiAuth):
         yb = self.g ** ra_b
 
         # Step 2:
-        # Randomly select a key k ∈ Z∗q and perform symmetric encryption on the data m
         k = self.group.random(ZR)
         symmetric_key = SymmetricCryptoAbstraction(self.H4(k))
         ED = symmetric_key.encrypt(m)
-
+        
+        print('########## ENC ##########')
+        # print('m:      ', m)
+        # print('ED:     ', ED)
+        # print('CLOUD > ', self.file_on_cloud)
+        
         # Step 3:
-        index = uuid.uuid4()
-        self.file_on_cloud[index] = ED
+        index = self.group.random(ZR)  # Use random ZR
+        self.file_on_cloud[str(index)] = ED  # Ensure index is a string
         hed = self.H4(ED)
 
         # Step 4:
-        tesa = time.time()
+        # tesa = time.time()
+        tesa = self.group.random(ZR)
         r = self.H1(index, k, tesa, hed)
         C0 = self.g ** r
 
         # Step 5:
-        Cb_1_k = integer(str(k)) ^ self.H3(pair(heid_b, yb) ** r)
-        Cb_1_index = integer(str(index)) ^ self.H3(pair(heid_b, yb) ** r)
-        Cb_1_hed = integer(str(hed)) ^ self.H3(pair(heid_b, yb) ** r)
-        Cb_1_tesa = integer(str(tesa)) ^ self.H3(pair(heid_b, yb) ** r)
+        hash_result = self.H3(pair(heid_b, yb) ** r)
+        Cb_1_k = integer(int(k)) ^ hash_result
+        Cb_1_index = integer(int(index)) ^ hash_result
+        Cb_1_hed = integer(hed) ^ hash_result
+        Cb_1_tesa = integer(int(tesa)) ^ hash_result
+
+        print('>>> PAIN START HERE (ENC) <<<')
+        print('k:      ', len(str(k)), k)
+        print('index:  ', len(str(index)), index)
+        print('hed:    ', len(str(hed)), hed, type(hed))
+        print('tesa:   ', len(str(tesa)), tesa)
+        
+        # print('hash_result:    ', len(str(hash_result)), hash_result)
+        # print('Cb_1_k:    ', len(str(Cb_1_k)), Cb_1_k)
+        # print('Cb_1_index:', len(str(Cb_1_index)), Cb_1_index)
+        # print('Cb_1_hed:  ', Cb_1_hed)
+        # print('Cb_1_tesa: ', Cb_1_tesa)
         
         Cb_1 = Cb_1_k + Cb_1_index + Cb_1_hed + Cb_1_tesa
         Cb_2 = self.H2(C0, Cb_1) ** r
@@ -136,13 +153,13 @@ class MJ18(ABEncMultiAuth):
         }
 
         # Step 7: 
-        # Upload CT to the blockchain (placeholder for blockchain interaction)
         self.file_on_blockchain = CT
 
         end = time.time()
         rt = end - start
 
-        return CT, ED, rt
+        return CT, rt
+
 
     # sign by SDi, send to ESb
     def sign_request_message(self, MServ, SDi, EIDa, LPKesb):
@@ -189,11 +206,11 @@ class MJ18(ABEncMultiAuth):
         lskesb = ESb['lsk']
 
         # 1. Check the freshness of the timestamp ti -> assume fresh enough
-        if not is_timestamp_fresh(ti):
-            print('Timestamp is not fresh. Discarding message.')
-            end = time.time()
-            rt = end - start
-            return False, rt
+        # if not is_timestamp_fresh(ti):
+        #     print('Timestamp is not fresh. Discarding message.')
+        #     end = time.time()
+        #     rt = end - start
+        #     return False, rt
 
         # Compute TSK'i = (APKi)^lskesb
         TSK_prime_i = APKi ** lskesb
@@ -255,7 +272,8 @@ class MJ18(ABEncMultiAuth):
         SKb_i = hi ** rb_i
 
         # 3. Compute the transformation key T Kb→i
-        tesb = time.time()
+        # tesb = time.time()
+        tesb = self.group.random(ZR)
         T_Kb_to_i = SK_prime_a_b * (self.g ** self.H1(SKb_i, Serv, tesb))
 
         # 4. Compute transformed ciphertext components
@@ -271,6 +289,12 @@ class MJ18(ABEncMultiAuth):
             'Cb_1_tesa': Cb_1_tesa,
             'C_prime_b_2': C_prime_b_2
         }
+
+        # print('########## Transform ##########')
+        # print('Cb_1_k:    ', Cb_1_k)
+        # print('Cb_1_index:', Cb_1_index)
+        # print('Cb_1_hed:  ', Cb_1_hed)
+        # print('Cb_1_tesa: ', Cb_1_tesa)
 
         end = time.time()
         rt = end - start
@@ -292,15 +316,35 @@ class MJ18(ABEncMultiAuth):
         SK_prime_b_i = h_prime_i ** r_prime_b_i
 
         # Step 2: Calculate (k||index||hed||tesa)
-        hash_rhs = self.H3(C_prime_b_2 / (C_prime_0 ** self.H1(SK_prime_b_i, Serv, tesb)))
-        k = hash_rhs ^ Cb_1_k
-        index = hash_rhs ^ Cb_1_index
-        hed = hash_rhs ^ Cb_1_hed
-        tesa = hash_rhs ^ Cb_1_tesa
+        hash_result = self.H3(C_prime_b_2 / (C_prime_0 ** self.H1(SK_prime_b_i, Serv, tesb)))
+        k_output = hash_result ^ Cb_1_k
+        index_output = hash_result ^ Cb_1_index
+        hed_output = hash_result ^ Cb_1_hed
+        tesa_output = hash_result ^ Cb_1_tesa
+
+        k = self.group.init(ZR, int(k_output)) 
+        index = self.group.init(ZR, int(index_output))
+        hed = integer_element_to_bytes(hed_output)
+        tesa = self.group.init(ZR, int(tesa_output))
 
         # Step 3: Calculate the expected value
-        ED = self.file_on_cloud.get(str(index))
+        ED = self.file_on_cloud.get(str(index))  # Ensure index is a string
         expected_C0_prime = pair(self.g, self.g) ** self.H1(index, k, tesa, hed)
+
+        print('########## DEC ##########')
+        # print('ED:     ', ED)
+        # print('CLOUD > ', self.file_on_cloud)
+        print('>>> PAIN START HERE (DEC) <<<')
+        actual_k = self.group.init(ZR, int(k))
+        print('k:      ', len(str(k)), k)
+        print('index:  ', len(str(index)), index)
+        print('hed:    ', len(str(hed)), hed, type(hed))
+        print('tesa:   ', len(str(tesa)), tesa)
+        # print('hash_result:    ', len(str(hash_result)), hash_result)
+        # print('Cb_1_k:    ', len(str(Cb_1_k)), Cb_1_k)
+        # print('Cb_1_index:', len(str(Cb_1_index)), Cb_1_index)
+        # print('Cb_1_hed:  ', Cb_1_hed)
+        # print('Cb_1_tesa: ', Cb_1_tesa)
 
         if expected_C0_prime.__str__() == C_prime_0.__str__():
             print('equal')
@@ -313,6 +357,7 @@ class MJ18(ABEncMultiAuth):
         end = time.time()
         rt = end - start
         return m, rt
+
 
 def is_timestamp_fresh(ti, threshold=1):
     """
@@ -328,6 +373,15 @@ def is_timestamp_fresh(ti, threshold=1):
     current_time = time.time()  # Get the current timestamp
     return (current_time - ti) <= threshold  # Check if within the threshold
 
+def integer_element_to_bytes(int_elem):
+    # Convert integer.Element to a standard Python integer
+    int_value = int(int_elem)
+    
+    # Calculate the length of bytes required to represent the integer
+    byte_length = (int_value.bit_length() + 7) // 8
+    
+    # Convert the integer to bytes
+    return int_value.to_bytes(byte_length, byteorder='big')
 
 # Define the length of the encrypted data (ED)
 ED_LENGTH = 32  # Example length; adjust as needed
@@ -380,7 +434,7 @@ def main():
 
                 # 2. Encryption
                 m = generate_random_str(n)
-                CT, ED, enc_time = scheme4.encryption_function(m, ESa, EIDb, LPKesb)
+                CT, enc_time = scheme4.encryption_function(m, ESa, EIDb, LPKesb)
                 enc_tot += enc_time
 
                 # 3. Sign message request
