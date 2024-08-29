@@ -24,10 +24,10 @@ class MJ18(ABEncMultiAuth):
         self.H1 = lambda *args: self.H.hashToZr(''.join([str(arg) for arg in args]))
 
         # H2: {0, 1}* → G
-        self.H2 = lambda *args: self.group.hash(''.join([str(arg) for arg in args]), G1)  # Maps to G1 (or G2 if needed)
+        self.H2 = lambda *args: self.group.hash(''.join([str(arg) for arg in args]), G1)  # Maps to G1
 
         # H3: GT → {0, 1}*
-        self.H3 = lambda *args: self.H.hashToZn(''.join([str(arg) for arg in args]))  # Maps GT to {0, 1}
+        self.H3 = lambda x: self.H.hashToZn(x)  # Maps GT to {0, 1}
         
         # H4: {0, 1}* → {0, 1}*
         self.H4 = lambda *args: sha256(''.join([str(arg) for arg in args]).encode()).digest()  # Maps {0, 1}* to {0, 1}*
@@ -38,6 +38,7 @@ class MJ18(ABEncMultiAuth):
         self.Serv = 'IIoT service X'
         self.omega = self.H1(self.Serv, self.s, self.Tc)
         self.W = self.g ** self.omega
+        self.file_on_cloud = {}
 
     def register_ES(self, EID):
         start = time.time()
@@ -100,7 +101,7 @@ class MJ18(ABEncMultiAuth):
 
         # Step 3:
         index = uuid.uuid4()
-        self.file_on_cloud = {'index': index, 'ED': ED}
+        self.file_on_cloud[index] = ED
         hed = self.H4(ED)
 
         # Step 4:
@@ -232,7 +233,7 @@ class MJ18(ABEncMultiAuth):
         Cb_2 = Hdr['Cb_2']
 
         # extract ESb
-        EIDb, lskesb = ESb['EID'], ESb['lskesb']
+        EIDb, lskesb = ESb['EID'], ESb['lsk']
 
         # 1. Compute RSK'a,b, r'a,b and SK'a,b
         RSK_prime_a_b = LPKesa ** lskesb
@@ -291,19 +292,20 @@ class MJ18(ABEncMultiAuth):
         tesa = hash_rhs ^ Cb_1_tesa
 
         # Step 3: Calculate the expected value
-        ED = self.file_on_cloud[index]
+        ED = self.file_on_cloud.get(str(index))
         expected_C0_prime = pair(self.g, self.g) ** self.H1(index, k, tesa, hed)
 
         if expected_C0_prime.__str__() == C_prime_0.__str__():
             print('equal')
             symmetric_key = SymmetricCryptoAbstraction(self.H4(k))
             m = symmetric_key.decrypt(ED)
-            end = time.time()
-            rt = end - start
-            return m, rt
         else:
             print('not equal')
-            return False, rt
+            m = False
+
+        end = time.time()
+        rt = end - start
+        return m, rt
 
 # Define the length of the encrypted data (ED)
 ED_LENGTH = 32  # Example length; adjust as needed
@@ -326,77 +328,94 @@ def main():
     output_txt = './scheme4.txt'
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
-        f.write('Seq EncryptionTime      DecryptionTime\n')
+        f.write('{:3} {:18}  {:18}  {:18}  {:18}  {:18}  {:18}\n'.format(
+            'Seq', 'RegTime', 'EncrTime', 'SignTime', 'VerfTime', 'TrnsTime', 'DecrTime'
+        ))
 
         for i in range(len(n_array)):
             scheme4 = MJ18(groupObj)
             seq = 5
-            enc_tot = 0.0
-            dec_tot = 0.0
+            reg_tot, enc_tot, sgn_tot, vrf_tot, trf_tot, dec_tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
             for j in range(seq):
                 n = n_array[i]
-                m = generate_random_str(n)
-                Serv = generate_random_str(n)
-                LPKesb = groupObj.random(G1)  # Example public key
-                lskesa = groupObj.random(ZR)  # Example secret key
-                EIDb = generate_random_str(n)
+                print(f'\nn, seq {n} {j}')
 
-                # Run the encryption function and measure time
-                CT, ED, enc_time = scheme4.encryption_function(m, Serv, LPKesb, lskesa, EIDb)
+                EIDa = generate_random_str(16)
+                EIDb = generate_random_str(16)
+                RIDi = generate_random_str(16)
+                
+                # 1. Register
+                ESa, reg_time_ESa = scheme4.register_ES(EIDa)
+                ESb, reg_time_ESb = scheme4.register_ES(EIDb)
+                SDi, reg_time_SDi = scheme4.register_SD(RIDi)
+                reg_tot += reg_time_ESa + reg_time_ESb + reg_time_SDi
+
+                # Public keys
+                LPKesb = ESb['LPK']  
+                LPKesa = ESa['LPK']
+                LPKi = SDi['LPK']
+
+                # 2. Encryption
+                m = generate_random_str(n)
+                CT, ED, enc_time = scheme4.encryption_function(m, ESa, EIDb, LPKesb)
                 enc_tot += enc_time
 
-                # Extract ciphertext components for decryption
-                CTb_i = {
-                    'C0': CT['Hdr']['C0'],
-                    'Cb_1_k': CT['Hdr']['Cb']['Cb_1_k'],
-                    'Cb_1_index': CT['Hdr']['Cb']['Cb_1_index'],
-                    'Cb_1_hed': CT['Hdr']['Cb']['Cb_1_hed'],
-                    'Cb_1_tesa': CT['Hdr']['Cb']['Cb_1_tesa'],
-                    'Cb_2': CT['Hdr']['Cb']['Cb_2']
-                }
+                # 3. Sign message request
+                MServ = generate_random_str(16)
+                msgi, sgn_time = scheme4.sign_request_message(MServ, SDi, EIDa, LPKesb)
+                sgn_tot += sgn_time
+                APKi = msgi['APKi']
 
-                # For decryption, provide APKi and SSKi
-                APKi = groupObj.random(G1)  # Example public key for decryption
-                SSKi = groupObj.random(ZR)  # Example secret key for decryption
-                tesb = CT['tesa']  # Use the same timestamp from encryption
+                # 4. Verify message request
+                vrf_result, vrf_time = scheme4.verify_request_message(msgi, ESb)
+                vrf_tot += vrf_time
+                if not vrf_result:
+                    print(f'Verification FAILED for n, seq: {n}, {j}')
+                else:
+                    print(f'Verification SUCCESS')
 
-                # Run the decryption function and measure time
-                # try:
-                #     decrypted_message, dec_time = scheme4.decryption_function(CTb_i, tesb, APKi, SSKi, Serv, ED)
-                #     dec_tot += dec_time
+                # 5. Transformation
+                CTb_to_i, tesb, trf_time = scheme4.transform(CT, ESb, LPKesa, LPKi, APKi)
+                trf_tot += trf_time
 
-                #     # Verify the decrypted message
-                #     if decrypted_message == m:
-                #         print(f'Decryption successful for Seq {j + 1}/{seq}')
-                #     else:
-                #         print(f'Decryption failed for Seq {j + 1}/{seq}')
-
-                # except ValueError as e:
-                #     print(f'Decryption error for Seq {j + 1}/{seq}: {str(e)}')
-                
-                decrypted_message, dec_time = scheme4.decryption_function(CTb_i, tesb, APKi, SSKi, Serv, ED)
+                # 6. Decryption
+                m_output, dec_time = scheme4.decryption_function(CTb_to_i, tesb, SDi, LPKesb, APKi)
                 dec_tot += dec_time
 
-                print(f'\nSeq {j + 1}/{seq},\tEncryption Time: {enc_tot:.16f}')
-                print(f'\t\tDecryption Time: {dec_tot:.16f}')
-                # print('Ciphertext: ', CT)
-                # print('ED: ', ED)
+                if not m_output:
+                    print(f'Decryption ERROR (C`0 not equal) for n, seq: {n}, {j}')
+                else:
+                    print(f'Decryption SUCCESS 1')
 
-            # Write the average encryption and decryption times for the current n value
+                if m_output != m:
+                    print(f'Decryption FAILED for n, seq: {n}, {j}')
+                else:
+                    print(f'Decryption SUCCESS 2')
+
+                print('M_input:    ', m)
+                print('M_output_1: ', m_output)
+
+                total_tot = reg_tot + enc_tot + sgn_tot + vrf_tot + trf_tot + dec_tot
+                print('total_tot:  ', total_tot)
+
+            # Write the average times for the current n value
+            avg_reg_time = reg_tot / seq
             avg_encryption_time = enc_tot / seq
+            avg_sign_time = sgn_tot / seq
+            avg_verification_time = vrf_tot / seq
+            avg_transformation_time = trf_tot / seq
             avg_decryption_time = dec_tot / seq
+
             out0 = str(n_array[i]).zfill(2)
-            out1 = str(format(avg_encryption_time, '.16f'))
-            out2 = str(format(avg_decryption_time, '.16f'))
-            f.write(out0 + '  ' + out1 + '  ' + out2 + '\n')
+            out1 = str(format(avg_reg_time, '.16f'))
+            out2 = str(format(avg_encryption_time, '.16f'))
+            out3 = str(format(avg_sign_time, '.16f'))
+            out4 = str(format(avg_verification_time, '.16f'))
+            out5 = str(format(avg_transformation_time, '.16f'))
+            out6 = str(format(avg_decryption_time, '.16f'))
 
-if __name__ == '__main__':
-    main()
-
-if __name__ == '__main__':
-    main()
-
+            f.write(f'{out0}  {out1}  {out2}  {out3}  {out4}  {out5}  {out6}\n')
 
 if __name__ == '__main__':
     main()
