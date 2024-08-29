@@ -408,8 +408,9 @@ def main():
     output_txt = './VFPPBA.txt'
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
-        f.write(
-            "Seq SetupAveTime       RegisterAveTime    EncAveTime         Dec1AveTime        AuthorizeAveTime   TransformAveTime   Dec2AveTime   " + '\n')
+        f.write('{:3} {:18} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
+            'Seq', 'SetupAveTime', 'RegisterAveTime', 'EncAveTime', 'Dec1AveTime', 'AuthorizeAveTime', 'TransformAveTime', 'Dec2AveTime'
+        ))
 
         for i in range(len(n_array)):
             ahnipe = MJ18(groupObj)
@@ -446,9 +447,7 @@ def main():
             out5 = str(format(autot / float(seq), '.16f'))
             out6 = str(format(trtot / float(seq), '.16f'))
             out7 = str(format(dec2tot / float(seq), '.16f'))
-            f.write(out0 + '  ' + out1 + ' ' + out2 + ' ' + out3 + ' ' + out4 + ' ' + out5 + ' ' + out6 + ' ' + out7)
-            f.write('\n')
-
+            f.write(f'{out0}  {out1} {out2} {out3} {out4} {out5} {out6} {out7}\n')
 
 if __name__ == "__main__":
     main()

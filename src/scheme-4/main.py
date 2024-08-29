@@ -66,6 +66,7 @@ class MJ18(ABEncMultiAuth):
         # generate lsk ∈ Z∗q and LPK for SD
         lski = self.group.random(ZR)
         LPKi = self.g ** lski
+        self.stored_LPKi = LPKi
 
         SDi = {
             'RID': RIDi,
@@ -147,7 +148,7 @@ class MJ18(ABEncMultiAuth):
     def sign_request_message(self, MServ, SDi, EIDa, LPKesb):
         start = time.time()
 
-        lski, LPKi = SDi['lsk'], SDi['LPK']
+        lski, LPKi, omegai = SDi['lsk'], SDi['LPK'], SDi['omega']
 
         # 1. SDi generates the shared secret key SSKi
         SSKi = LPKesb ** lski
@@ -163,8 +164,7 @@ class MJ18(ABEncMultiAuth):
         # 4. SDi chooses current timestamps ti and calculates thetai and signature σi
         ti = time.time()
         thetai = self.H1(self.W, ti, MServ, TSKi, SSKi, APKi, PIDi, EIDa)
-        w = self.group.random(ZR)  # w could be some global or predefined value
-        sigmai = aski + w * thetai
+        sigmai = aski + omegai * thetai
 
         # 5. SDi sends the message msgi to ESB
         msgi = {
@@ -189,6 +189,11 @@ class MJ18(ABEncMultiAuth):
         lskesb = ESb['lsk']
 
         # 1. Check the freshness of the timestamp ti -> assume fresh enough
+        if not is_timestamp_fresh(ti):
+            print('Timestamp is not fresh. Discarding message.')
+            end = time.time()
+            rt = end - start
+            return False, rt
 
         # Compute TSK'i = (APKi)^lskesb
         TSK_prime_i = APKi ** lskesb
@@ -197,9 +202,11 @@ class MJ18(ABEncMultiAuth):
         LPKi = PIDi - TSK_prime_i
 
         # Check if LPKi exists in the database
-        # if LPKi not in database:
-        #     print('LPKi does not exist in the database. Discarding message.')
-        #     return False
+        if LPKi != self.stored_LPKi:
+            print('LPKi does not exist in the database. Discarding message.')
+            end = time.time()
+            rt = end - start
+            return False, rt
 
         # 3. Compute SSK'i = (LPKi)^lskesb
         SSK_prime_i = LPKi ** lskesb
@@ -307,6 +314,21 @@ class MJ18(ABEncMultiAuth):
         rt = end - start
         return m, rt
 
+def is_timestamp_fresh(ti, threshold=1):
+    """
+    Check if the given timestamp `ti` is within the threshold time (in seconds) from the current time.
+
+    Parameters:
+    - ti (float): The timestamp to check.
+    - threshold (int): The time threshold in seconds (default is 1 seconds).
+
+    Returns:
+    - bool: True if the timestamp is fresh, False otherwise.
+    """
+    current_time = time.time()  # Get the current timestamp
+    return (current_time - ti) <= threshold  # Check if within the threshold
+
+
 # Define the length of the encrypted data (ED)
 ED_LENGTH = 32  # Example length; adjust as needed
 
@@ -328,13 +350,13 @@ def main():
     output_txt = './scheme4.txt'
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
-        f.write('{:3} {:18}  {:18}  {:18}  {:18}  {:18}  {:18}\n'.format(
-            'Seq', 'RegTime', 'EncrTime', 'SignTime', 'VerfTime', 'TrnsTime', 'DecrTime'
+        f.write('{:3} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
+            'Seq', 'RegAveTime', 'EncAveTime', 'SignAveTime', 'VerifyAveTime', 'TransformAveTime', 'DecAveTime'
         ))
 
         for i in range(len(n_array)):
             scheme4 = MJ18(groupObj)
-            seq = 5
+            seq = 1
             reg_tot, enc_tot, sgn_tot, vrf_tot, trf_tot, dec_tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
             for j in range(seq):
@@ -415,7 +437,7 @@ def main():
             out5 = str(format(avg_transformation_time, '.16f'))
             out6 = str(format(avg_decryption_time, '.16f'))
 
-            f.write(f'{out0}  {out1}  {out2}  {out3}  {out4}  {out5}  {out6}\n')
+            f.write(f'{out0}  {out1} {out2} {out3} {out4} {out5} {out6}\n')
 
 if __name__ == '__main__':
     main()
