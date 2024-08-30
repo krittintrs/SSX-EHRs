@@ -316,8 +316,7 @@ class MJ18(ABEncMultiAuth):
         # Compare C'0
         if expected_C0_prime.__str__() == C_prime_0.__str__():
             symmetric_key = SymmetricCryptoAbstraction(self.H4(k))
-            m_bytes = symmetric_key.decrypt(ED)
-            m = m_bytes.decode('utf-8')
+            m = symmetric_key.decrypt(ED)
         else:
             m = False
         
@@ -367,24 +366,32 @@ def generate_random_str(length):
         random_str += base_str[random.randint(0, length - 1)]
     return random_str
 
+import os
+import filecmp
+
+def compare_files(file1, file2):
+    return filecmp.cmp(file1, file2, shallow=False)
+
 def main():
     groupObj = PairingGroup('SS512')
-    n_array = np.arange(5, 30, 5)
+    file_sizes = [100_000, 500_000, 2_000_000, 10_000_000, 50_000_000]
+    n = len(file_sizes)
+    input_file_dir = '../sample/input/'
+    output_file_dir = '../sample/output/'
     output_txt = './scheme4.txt'
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
-        f.write('{:3} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
-            'Seq', 'RegAveTime', 'EncAveTime', 'SignAveTime', 'VerifyAveTime', 'TransformAveTime', 'DecAveTime'
+        f.write('{:8} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
+            'Size', 'RegAveTime', 'EncAveTime', 'SignAveTime', 'VerifyAveTime', 'TransformAveTime', 'DecAveTime'
         ))
 
-        for i in range(len(n_array)):
+        for i in range(n):
             scheme4 = MJ18(groupObj)
-            seq = 5
             reg_tot, enc_tot, sgn_tot, vrf_tot, trf_tot, dec_tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
-            for j in range(seq):
-                n = n_array[i]
-                print(f'\nn, seq {n} {j}')
+            for j in range(n):
+                file_size = file_sizes[i]
+                print(f'\nFile size: {file_size} bytes, seq: {j}')
 
                 EIDa = generate_random_str(16)
                 EIDb = generate_random_str(16)
@@ -402,7 +409,10 @@ def main():
                 LPKi = SDi['LPK']
 
                 # 2. Encryption
-                m = generate_random_str(n)
+                input_file = f'{input_file_dir}input_file_{file_size}.bin'
+                with open(input_file, 'rb') as f_in:
+                    m = f_in.read()
+
                 CT, enc_time = scheme4.encryption_function(m, ESa, EIDb, LPKesb)
                 enc_tot += enc_time
 
@@ -416,9 +426,7 @@ def main():
                 vrf_result, vrf_time = scheme4.verify_request_message(msgi, ESb)
                 vrf_tot += vrf_time
                 if not vrf_result:
-                    print(f'Verification FAILED for n, seq: {n}, {j}')
-                # else:
-                #     print(f'Verification SUCCESS')
+                    print(f'Verification FAILED for file size: {file_size} bytes, seq: {j}')
 
                 # 5. Transformation
                 CTb_to_i, tesb, trf_time = scheme4.transform(CT, ESb, LPKesa, LPKi, APKi)
@@ -428,31 +436,33 @@ def main():
                 m_output, dec_time = scheme4.decryption_function(CTb_to_i, tesb, SDi, LPKesb, APKi)
                 dec_tot += dec_time
 
+                # Write the decrypted content to a file
+                output_file = f'{output_file_dir}output_file_{file_size}_{j}.bin'
+                with open(output_file, 'wb') as f_out:
+                    f_out.write(m_output)
+
                 if not m_output:
-                    print(f'Decryption ERROR (C`0 not equal) for n, seq: {n}, {j}')
-                # else:
-                #     print(f'Decryption SUCCESS 1')
-
+                    print(f'Decryption ERROR for file size: {file_size} bytes, seq: {j}')
                 if m_output != m:
-                    print(f'Decryption FAILED for n, seq: {n}, {j}')
-                # else:
-                #     print(f'Decryption SUCCESS 2')
+                    print(f'Decryption FAILED for file size: {file_size} bytes, seq: {j}')
+                
+                # Compare the original file with the decrypted file
+                if compare_files(input_file, output_file):
+                    print(f'File decryption successful file size: {file_size} bytes, seq: {j}')
+                else:
+                    print(f'File decryption failed file size: {file_size} bytes, seq: {j}')
 
-                # print('M_input:    ', m)
-                # print('M_output_1: ', m_output)
+                print('Total time for this run: ', reg_tot + enc_tot + sgn_tot + vrf_tot + trf_tot + dec_tot)
 
-                total_tot = reg_tot + enc_tot + sgn_tot + vrf_tot + trf_tot + dec_tot
-                # print('total_tot:  ', total_tot)
+            # Write the average times for the current file size
+            avg_reg_time = reg_tot / n
+            avg_encryption_time = enc_tot / n
+            avg_sign_time = sgn_tot / n
+            avg_verification_time = vrf_tot / n
+            avg_transformation_time = trf_tot / n
+            avg_decryption_time = dec_tot / n
 
-            # Write the average times for the current n value
-            avg_reg_time = reg_tot / seq
-            avg_encryption_time = enc_tot / seq
-            avg_sign_time = sgn_tot / seq
-            avg_verification_time = vrf_tot / seq
-            avg_transformation_time = trf_tot / seq
-            avg_decryption_time = dec_tot / seq
-
-            out0 = str(n_array[i]).zfill(2)
+            out0 = str(file_sizes[i]).zfill(8)
             out1 = str(format(avg_reg_time, '.16f'))
             out2 = str(format(avg_encryption_time, '.16f'))
             out3 = str(format(avg_sign_time, '.16f'))
@@ -460,7 +470,7 @@ def main():
             out5 = str(format(avg_transformation_time, '.16f'))
             out6 = str(format(avg_decryption_time, '.16f'))
 
-            f.write(f'{out0}  {out1} {out2} {out3} {out4} {out5} {out6}\n')
+            f.write(f'{out0} {out1} {out2} {out3} {out4} {out5} {out6}\n')
 
 if __name__ == '__main__':
     main()
