@@ -116,13 +116,6 @@ class MJ18(ABEncMultiAuth):
         Cb_1_hed = bytes_to_integer_element(hed) ^ hash_result
         Cb_1_tesa = float_to_int_elem(tesa) ^ hash_result
         
-        print('>>> PAIN START HERE (ENC) <<<')
-        # print('k:      ', len(str(k)), k)
-        # print('index:  ', len(str(index)), index)
-        print('hed:    ', len(str(hed)), hed, type(hed))
-        print('hed_int: ', bytes_to_integer_element(hed))
-        # print('tesa:   ', len(str(tesa)), tesa)
-        
         Cb_1 = Cb_1_k + Cb_1_index + Cb_1_hed + Cb_1_tesa
         Cb_2 = self.H2(C0, Cb_1) ** r
 
@@ -226,15 +219,16 @@ class MJ18(ABEncMultiAuth):
         left_hand_side = self.g ** sigmai
         right_hand_side = APKi * (W ** theta_prime_i)
 
+        if left_hand_side != right_hand_side:
+            print('Verification failed. Discarding message.')
+            verify = False
+        else:
+            verify = True
+
         end = time.time()
         rt = end - start
 
-        if left_hand_side != right_hand_side:
-            print('Verification failed. Discarding message.')
-            return False, rt
-
-        print('Verification succeeded. Message accepted.')
-        return True, rt
+        return verify, rt
 
     # transform by ESb
     def transform(self, CT, ESb, LPKesa, LPKi, APKi):
@@ -307,67 +301,49 @@ class MJ18(ABEncMultiAuth):
 
         k = self.group.init(ZR, int(k_output)) 
         index = self.group.init(ZR, int(index_output))
-        hed = integer_element_to_bytes(hed_output)
+        derived_hed = integer_element_to_bytes(hed_output)
         tesa = int_elem_to_float(int(tesa_output))
 
         # Step 3: Calculate the expected value
-        ED = self.file_on_cloud.get(str(index))  # Ensure index is a string
-        expected_C0_prime = pair(self.g, self.g) ** self.H1(index, k, tesa, hed)
+        ED = self.file_on_cloud.get(str(index))  
+        calculated_hed = self.H4(ED)
+        if derived_hed != calculated_hed:
+            # Debug Hash
+            print('INTEGRITY ERROR: HASHES ARE NOT THE SAME')
+            
+        expected_C0_prime = pair(self.g, self.g) ** self.H1(index, k, tesa, calculated_hed)
 
-        # print('########## DEC ##########')
-        # print('ED:     ', ED)
-        # print('CLOUD > ', self.file_on_cloud)
-
+        # Compare C'0
         if expected_C0_prime.__str__() == C_prime_0.__str__():
-            print('equal')
+            symmetric_key = SymmetricCryptoAbstraction(self.H4(k))
+            m_bytes = symmetric_key.decrypt(ED)
+            m = m_bytes.decode('utf-8')
         else:
-            print('@@@@@@@@@@@@@ NOT EQUAL IDIOT @@@@@@@@@@@@@')
-            print('expect_C0p: ', expected_C0_prime)
-            print('C0p:        ', C_prime_0)
-            print('>>> PAIN START HERE (DEC) <<<')
-            # print('k:      ', len(str(k)), k)
-            # print('index:  ', len(str(index)), index)
-            print('hed:    ', len(str(hed)), hed, type(hed))
-            print('hed_int: ', hed_output)
-            # print('tesa:   ', len(str(tesa)), tesa)
-
             m = False
         
-        symmetric_key = SymmetricCryptoAbstraction(self.H4(k))
-        m_bytes = symmetric_key.decrypt(ED)
-        m = m_bytes.decode('utf-8')
-        print('m_out:  ', m, type(m))
-
         end = time.time()
         rt = end - start
         return m, rt
 
+def bytes_to_integer_element(byte_data):
+    int_value = int.from_bytes(byte_data, byteorder='big', signed=False)
+    original_length = len(byte_data)
+    int_with_size = (int_value << (original_length.bit_length() + 7)) | original_length
+    return integer(int_with_size)
+
 def integer_element_to_bytes(int_elem):
-    # Convert integer.Element to a standard Python integer
     int_value = int(int_elem)
-    
-    # Calculate the length of bytes required to represent the integer
-    byte_length = (int_value.bit_length() + 7) // 8
-    
-    # Convert the integer to bytes, ensure it is properly zero-padded
-    return int_value.to_bytes(byte_length, byteorder='big', signed=False)
+    original_length = int_value & ((1 << 8) - 1)
+    hed_int = int_value >> (original_length.bit_length() + 7)
+    return hed_int.to_bytes(original_length, byteorder='big', signed=False)
 
-def bytes_to_integer_element(bytes_data):
-    # Convert bytes to integer
-    int_value = int.from_bytes(bytes_data, byteorder='big')
-    
-    return integer(int_value)
-
-# Declare the scale factor once
-scale_factor = 1e9  # Adjust the scale factor as needed for precision
+scale_factor = 1e9 
 
 def float_to_int_elem(value):
-    # Convert a float to an integer element
     scaled_value = int(value * scale_factor)
     return integer(scaled_value)
 
 def int_elem_to_float(int_elem):
-    # Convert an integer element back to a float
     return int_elem / scale_factor
 
 def is_timestamp_fresh(ti, threshold=1):
@@ -390,7 +366,6 @@ def generate_random_str(length):
     for i in range(length):
         random_str += base_str[random.randint(0, length - 1)]
     return random_str
-
 
 def main():
     groupObj = PairingGroup('SS512')
@@ -442,8 +417,8 @@ def main():
                 vrf_tot += vrf_time
                 if not vrf_result:
                     print(f'Verification FAILED for n, seq: {n}, {j}')
-                else:
-                    print(f'Verification SUCCESS')
+                # else:
+                #     print(f'Verification SUCCESS')
 
                 # 5. Transformation
                 CTb_to_i, tesb, trf_time = scheme4.transform(CT, ESb, LPKesa, LPKi, APKi)
@@ -463,11 +438,11 @@ def main():
                 # else:
                 #     print(f'Decryption SUCCESS 2')
 
-                print('M_input:    ', m)
-                print('M_output_1: ', m_output)
+                # print('M_input:    ', m)
+                # print('M_output_1: ', m_output)
 
                 total_tot = reg_tot + enc_tot + sgn_tot + vrf_tot + trf_tot + dec_tot
-                print('total_tot:  ', total_tot)
+                # print('total_tot:  ', total_tot)
 
             # Write the average times for the current n value
             avg_reg_time = reg_tot / seq
