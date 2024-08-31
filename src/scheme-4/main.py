@@ -374,14 +374,14 @@ def compare_files(file1, file2):
 
 def main():
     groupObj = PairingGroup('SS512')
-    file_sizes = [100_000, 500_000, 2_000_000, 10_000_000, 50_000_000]
+    file_sizes = [50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
     n = len(file_sizes)
     input_file_dir = '../sample/input/'
     output_file_dir = '../sample/output/'
     output_txt = './scheme4.txt'
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
-        f.write('{:8} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
+        f.write('{:7} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
             'Size', 'RegAveTime', 'EncAveTime', 'SignAveTime', 'VerifyAveTime', 'TransformAveTime', 'DecAveTime'
         ))
 
@@ -462,7 +462,7 @@ def main():
             avg_transformation_time = trf_tot / n
             avg_decryption_time = dec_tot / n
 
-            out0 = str(file_sizes[i]).zfill(8)
+            out0 = str(file_sizes[i]).zfill(7)
             out1 = str(format(avg_reg_time, '.16f'))
             out2 = str(format(avg_encryption_time, '.16f'))
             out3 = str(format(avg_sign_time, '.16f'))
