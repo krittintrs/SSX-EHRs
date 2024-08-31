@@ -381,7 +381,7 @@ def main():
             'Size', 'RegAveTime', 'EncAveTime', 'SignAveTime', 'VerifyAveTime', 'TransformAveTime', 'DecAveTime'
         ))
 
-        for i in range(num):
+        for i in range(len(file_sizes)):
             scheme4 = MJ18(groupObj)
             reg_tot, enc_tot, sgn_tot, vrf_tot, trf_tot, dec_tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
