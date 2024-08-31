@@ -24,11 +24,12 @@ def generate_private_key(attributes, priv_name):
 
     return private_key
 
+
 def main():
     setup_cpabe()
     
     attributes = ['A', 'B', 'C', 'D', 'E']
-    priv_name = 'DO_priv'
+    priv_name = 'test_priv'
 
     generate_private_key(attributes,priv_name)
 
