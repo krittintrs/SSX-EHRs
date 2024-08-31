@@ -80,9 +80,13 @@ def encrypt_key_cpabe(padded_key, policy, name):
     # Clean up the temporary file
     os.remove('temp_padded_key.bin')
 
-def encryption(file_size):
-    name = str(file_size)+"MB"
-    generate_file(name,file_size)
+def encryption(file_size, file_format):
+    if file_format == "bytes":
+        name = str(file_size)+"bytes"
+        generate_file_byte(name, file_size)
+    elif file_format == "MB":
+        name = str(file_size)+"MB"
+        generate_file_MB(name, file_size)
 
  # Generate a random AES key
     generate_aes_key(name)
@@ -112,9 +116,9 @@ def encryption(file_size):
     
     print(f'''
           ========================================================
-          Time that use for ENCRYPT --- {file_size} MB file --- is 
+          Time that use for ENCRYPT --- {name} file --- is 
           
-          TOTAL TIME        =>  {total_time} secs
+          TOTAL ENC TIME    =>  {total_time} secs
           ENC FILE TIME     =>  {enc_file_time} secs
           ENC AES KEY TIME  =>  {enc_aes_key_time} secs
           --------------------------------------------------------''')
@@ -173,8 +177,9 @@ def decrypt_file_aes(name, key):
 
 ## DECRYPT
 
-def decryption(file_size):
-    name = str(file_size) + "MB"
+def decryption(file_size, file_format):
+    
+    name = str(file_size) + file_format
 
     start_time = timeit.default_timer()
     # Step 1: decrypt padded AES KEY with cpabe key
@@ -192,26 +197,32 @@ def decryption(file_size):
     input_file = os.path.join(PLAIN_FILE_PATH, name)
     output_file = os.path.join(DEC_FILE_PATH, "dec_{}".format(name))
 
-
     # Compare the original file with the decrypted file
     if compare_files(input_file, output_file):
-        print(f'          File decryption ✅✅successful✅✅ file size: {file_size} MB')
+        print(f'          File decryption ✅✅successful✅✅ file size: {name}')
     else:
-        print(f'          File decryption ❌❌failed❌❌ file size: {file_size} MB')
+        print(f'          File decryption ❌❌failed❌❌ file size: {name}')
 
     print(f'''          
-          Time that use for ENCRYPT --- {file_size} MB file --- is 
+          Time that use for DECRYPT --- {name} file --- is 
         
-          TOTAL TIME        =>  {total_time} secs
+          TOTAL DEC TIME    =>  {total_time} secs
           ========================================================
           ''')
 #=========================END DECYPRT===========================#
 
 ## Utilize FUNC
 # Function to Generate file with specific size
-def generate_file(filename, size_mb):
+def generate_file_MB(filename, size_mb):
     # Size in bytes
     size_bytes = size_mb * 1024 * 1024
+    file_path = os.path.join(PLAIN_FILE_PATH,filename)
+    # Generate random data
+    with open(file_path, 'wb') as f:
+        f.write(os.urandom(size_bytes))
+
+def generate_file_byte(filename, size_bytes):
+    # Size in bytes
     file_path = os.path.join(PLAIN_FILE_PATH,filename)
     # Generate random data
     with open(file_path, 'wb') as f:
@@ -238,11 +249,13 @@ def compare_files(file1, file2):
 #=========================END Utilize===========================#
 # Main Function
 def main():
-    file_size = [1]
-    for i in file_size:
-        for j in range(1):
-            encryption(i)
-            decryption(i)
+    file_sizes = [50000,100000,200000,400000,800000,1600000]
+    file_format = "bytes" # bytes or MB
+    for j in range(2):    
+        for i in file_sizes:
+            encryption(i, file_format)
+            decryption(i, file_format)
+        print("#############################################################################")
 
 if __name__ == '__main__':
     main()

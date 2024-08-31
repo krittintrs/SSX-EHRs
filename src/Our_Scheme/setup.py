@@ -18,17 +18,11 @@ def generate_private_key(attributes, priv_name):
     cpabe_keygen_path = os.path.join(CPABE_PATH, 'cpabe-keygen')
     subprocess.run([cpabe_keygen_path, '-o', priv_key_path, pub_key_path, master_key_path] + attributes, check=True)
 
-    # Read the private key from the file
-    with open(priv_key_path, "rb") as f:
-        private_key = base64.b64encode(f.read()).decode("utf-8")
-
-    return private_key
-
 
 def main():
-    setup_cpabe()
+    # setup_cpabe()
     
-    attributes = ['A', 'B', 'C', 'D', 'E']
+    attributes = ['A', 'B', 'E']
     priv_name = 'test_priv'
 
     generate_private_key(attributes,priv_name)
