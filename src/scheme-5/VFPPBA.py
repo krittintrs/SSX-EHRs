@@ -5,6 +5,7 @@
 # H1: GT -> {0,1}^2l    H.hashToZn(equ1)
 # H2: {0,1} -> Zp       H.hashToZr(psi)  eg. H2(psi)         z = group.hash((m, k), ZR)
 """
+import filecmp
 import random
 
 from charm.toolbox.pairinggroup import PairingGroup, ZR, G1, G2, GT, pair
@@ -13,6 +14,7 @@ import time
 import numpy as np
 from charm.toolbox.hash_module import Hash
 from charm.core.math.integer import integer, int2Bytes
+from charm.toolbox.conversion import Conversion
 from sympy import *
 import sys
 sys.path.append('../')
@@ -87,6 +89,20 @@ class MJ18(ABEncMultiAuth):
         c0m = integer(m) ^ H.hashToZn(pair(g, uby) ** z)
         c0k = integer(k) ^ H.hashToZn(pair(g, uby) ** z)
         c1 = g ** z
+
+        # print(f'm:    {m}')
+        
+        # int_m = Conversion.bytes2integer(m)
+        # print(f"Converted integer (int_m): {int_m}")
+        # print(f"Byte length of m: {len(m)}")
+        # print(f"Bit length of int_m: {int(int_m).bit_length()}")
+
+        # hashed_value = H.hashToZn(pair(g, uby) ** z)
+        # print(f"Hash output (hashed_value): {hashed_value}")
+        # print(f"Bit length of hashed_value: {int(hashed_value).bit_length()}")
+        
+        # print(f'c0m:  {len(str(c0m))}')
+        # print(f'c0k:  {len(str(c0k))}')
 
         g0 = pp['g0']
         g1 = pp['g1']
@@ -191,10 +207,19 @@ class MJ18(ABEncMultiAuth):
 
         c = ct['c']
         test = (sigma ** H.hashToZr(mnum)) * (mu ** H.hashToZr(knum))
-        if (c / test == ele1):
-            m = int2Bytes(mnum).decode("utf-8")
-            k = int2Bytes(knum)
+        
+        # print(f"A hashed: {H.hashToZn(A)}")
+        # print(f"mnum size: {len(str(mnum))}, knum size: {len(str(knum))}")
+        # print(f"test: {test}, c: {c}, ele1: {ele1}")
 
+        if (c / test == ele1):
+            m = int2Bytes(mnum)
+            k = int2Bytes(knum)
+        else:
+            print('!!! DEC 1 FAILED !!!')
+            m = int2Bytes(mnum)
+            k = int2Bytes(knum)
+            
         end = time.time()
         rt = end - start
         return m, rt
@@ -224,13 +249,14 @@ class MJ18(ABEncMultiAuth):
         mnum = c0m ^ H.hashToZn(A1 ** (1 / H2psi))
         knum = c0k ^ H.hashToZn(A1 ** (1 / H2psi))
 
-        m = int2Bytes(mnum)
-        k = int2Bytes(knum)
-
         c = ct['c']
         test = (sigma ** H.hashToZr(mnum)) * (mu ** H.hashToZr(knum))
         if (c / test == ele1):
-            m = int2Bytes(mnum).decode("utf-8")
+            m = int2Bytes(mnum)
+            k = int2Bytes(knum)
+        else:
+            print('!!! DEC 2 FAILED !!!')
+            m = int2Bytes(mnum)
             k = int2Bytes(knum)
 
         end = time.time()
@@ -379,7 +405,7 @@ def generate_random_str(length):
     random_str = ''
     base_str = 'helloworlddfafj23i4jri3jirj23idaf2485644f5551jeri23jeri23ji23'
     for i in range(length):
-        random_str += base_str[random.randint(0, length - 1)]
+        random_str += base_str[random.randint(0, len(base_str) - 1)]
     return random_str
 
 
@@ -401,53 +427,113 @@ def coeffs_function(n, inputarray):
         coeffs_value.append(res)
     return coeffs_value, coeffs_array
 
+def compare_files(file1, file2):
+    return filecmp.cmp(file1, file2, shallow=False)
 
 def main():
     groupObj = PairingGroup('SS512')
-    n_array = np.arange(5, 30, 5)
+    file_sizes = [50_000, 100_000, 128_000, 200_000, 400_000, 800_000, 1_600_000]
+    # file_sizes = [120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130]
+    num = 5
+    input_file_dir = '../sample/input/'
+    output_file_dir = '../sample/output/'
     output_txt = './VFPPBA.txt'
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
-        f.write('{:3} {:18} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
-            'Seq', 'SetupAveTime', 'RegisterAveTime', 'EncAveTime', 'Dec1AveTime', 'AuthorizeAveTime', 'TransformAveTime', 'Dec2AveTime'
+        f.write('{:7} {:18} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
+            'Size', 'SetupAveTime', 'RegAveTime', 'EncAveTime', 'Dec1AveTime', 'AuthAveTime', 'TransformAveTime', 'Dec2AveTime'
         ))
 
-        for i in range(len(n_array)):
-            ahnipe = MJ18(groupObj)
-            seq = 5
-            sttot, retot, enctot, dec1tot, autot, trtot, dec2tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-            for j in range(seq):
-                n = n_array[i]
-                rm = generate_random_str(n)
-                rk = generate_random_str(n)
-                pp, msk, setuptime = ahnipe.setup_vfippre(n)
-                sk, sk1, x, x1, registertime = ahnipe.register_vfippre(n, msk)
-                ct, m, k, enctime = ahnipe.enc_vfippre(n, x, rm, rk, pp)
-                atyw, authorizetime = ahnipe.authorize_vfippre(n, x1, pp, sk, ct)
-                ctxw, transformtime = ahnipe.transform_vfippre(ct, atyw)
+        for i in range(len(file_sizes)):
+            vfppba = MJ18(groupObj)
+            set_tot, reg_tot, enc_tot, dec1_tot, auth_tot, trf_tot, dec2_tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
-                M_output_1, dec1time = ahnipe.dec1_function(n, sk, ct)
-                M_output_2, k, dec2time = ahnipe.dec2_function(n, sk1, ct, ctxw)
+            for j in range(num):
+                file_size = file_sizes[i]
+                print(f'\nFile size: {file_size} bytes, seq: {j}')
+            
+                input_file = f'{input_file_dir}input_file_{file_size}.bin'
+                with open(input_file, 'rb') as f_in:
+                    rm = f_in.read()
 
-                print("\nn, seq ", n, j)
-                print("M_input:    ", m)
-                print("M_output_1: ", M_output_1)
-                print("M_output_2: ", M_output_2)
-                # encrypt(m)
-                # decrypt(M_output_1)
+                # 0. Setup phase
+                n = 32
+                pp, msk, set_time = vfppba.setup_vfippre(n)
+                
+                # 1. Register phase
+                sk, sk1, x, x1, reg_time = vfppba.register_vfippre(n, msk)
+                
+                # 2. Encryption phase
+                # rk = generate_random_str(n)
+                from hashlib import sha256
+                rk = sha256(rm).digest()
+                print(f'rm size: {len(rm)} / rk size: {len(rk)}')
+                ct, m, k, enc_time = vfppba.enc_vfippre(n, x, rm, rk, pp)
+                
+                # 3. Authorization phase
+                atyw, auth_time = vfppba.authorize_vfippre(n, x1, pp, sk, ct)
+                
+                # 4. Transformation phase
+                ctxw, trf_time = vfppba.transform_vfippre(ct, atyw)
 
-                sttot, retot, enctot, dec1tot, autot, trtot, dec2tot = sttot + setuptime, retot + registertime, enctot + enctime, dec1tot + dec1time, autot + authorizetime, trtot + transformtime, dec2tot + dec2time
-                print("sttot:", sttot)
+                # 5. Decryption 1 phase
+                M_output_1, dec1_time = vfppba.dec1_function(n, sk, ct)
 
-            out0 = str(n).zfill(2)
-            out1 = str(format(sttot / float(seq), '.16f'))
-            out2 = str(format(retot / float(seq), '.16f'))
-            out3 = str(format(enctot / float(seq), '.16f'))
-            out4 = str(format(dec1tot / float(seq), '.16f'))
-            out5 = str(format(autot / float(seq), '.16f'))
-            out6 = str(format(trtot / float(seq), '.16f'))
-            out7 = str(format(dec2tot / float(seq), '.16f'))
-            f.write(f'{out0}  {out1} {out2} {out3} {out4} {out5} {out6} {out7}\n')
+                # 6. Decryption 2 phase
+                M_output_2, k, dec2_time = vfppba.dec2_function(n, sk1, ct, ctxw)
 
-if __name__ == "__main__":
+                # Write the decrypted content to a file
+                output_file_1 = f'{output_file_dir}output_file_dec1_{file_size}_{j}.bin'
+                output_file_2 = f'{output_file_dir}output_file_dec2_{file_size}_{j}.bin'
+
+                with open(output_file_1, 'wb') as f_out_1:
+                    f_out_1.write(M_output_1)
+
+                with open(output_file_2, 'wb') as f_out_2:
+                    f_out_2.write(M_output_2)
+
+                # Compare the original file with the decrypted files
+                if compare_files(input_file, output_file_1):
+                    print(f'Decryption 1 successful for file size: {file_size} bytes, seq: {j}')
+                else:
+                    print(f'Decryption 1 failed for file size: {file_size} bytes, seq: {j}')
+
+                if compare_files(input_file, output_file_2):
+                    print(f'Decryption 2 successful for file size: {file_size} bytes, seq: {j}')
+                else:
+                    print(f'Decryption 2 failed for file size: {file_size} bytes, seq: {j}')
+
+                # Calculate time
+                set_tot += set_time
+                reg_tot += reg_time
+                enc_tot += enc_time
+                dec1_tot += dec1_time
+                auth_tot += auth_time
+                trf_tot += trf_time
+                dec2_tot += dec2_time
+
+                total_time = set_time + reg_time + enc_time + dec1_tot + auth_time + trf_time + dec2_time
+                print('Total time for this run: ', total_time)
+
+            # Write the average times for the current file size
+            avg_setup_time = set_tot / num
+            avg_register_time = reg_tot / num
+            avg_encryption_time = enc_tot / num
+            avg_dec1_time = dec1_tot / num
+            avg_authorize_time = auth_tot / num
+            avg_transform_time = trf_tot / num
+            avg_dec2_time = dec2_tot / num
+
+            out0 = str(file_sizes[i]).zfill(7)
+            out1 = str(format(avg_setup_time, '.16f'))
+            out2 = str(format(avg_register_time, '.16f'))
+            out3 = str(format(avg_encryption_time, '.16f'))
+            out4 = str(format(avg_dec1_time, '.16f'))
+            out5 = str(format(avg_authorize_time, '.16f'))
+            out6 = str(format(avg_transform_time, '.16f'))
+            out7 = str(format(avg_dec2_time, '.16f'))
+
+            f.write(f'{out0} {out1} {out2} {out3} {out4} {out5} {out6} {out7}\n')
+
+if __name__ == '__main__':
     main()
