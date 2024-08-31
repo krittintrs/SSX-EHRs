@@ -130,7 +130,7 @@ def use_aes_key(name):
 
 def encryption(file_size):
     name = str(file_size)+"MB"
-    # generate_file(name,file_size)
+    generate_file(name,file_size)
 
  # Generate a random AES key
     generate_aes_key(name)
@@ -174,7 +174,7 @@ def encryption(file_size):
 
 # Main Function
 def main():
-    file_size = [1,10,100,500,1000]
+    file_size = [1,10,100]
     for i in file_size:
         for j in range(3):
             encryption(i)
