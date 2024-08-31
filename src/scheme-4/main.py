@@ -1,7 +1,6 @@
-import os
+import filecmp
 import random
 import time
-import numpy as np
 from charm.toolbox.pairinggroup import PairingGroup, ZR, G1, G2, GT, pair
 from charm.toolbox.hash_module import Hash
 from charm.toolbox.symcrypto import SymmetricCryptoAbstraction
@@ -366,16 +365,13 @@ def generate_random_str(length):
         random_str += base_str[random.randint(0, length - 1)]
     return random_str
 
-import os
-import filecmp
-
 def compare_files(file1, file2):
     return filecmp.cmp(file1, file2, shallow=False)
 
 def main():
     groupObj = PairingGroup('SS512')
     file_sizes = [50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
-    n = len(file_sizes)
+    num = len(file_sizes)
     input_file_dir = '../sample/input/'
     output_file_dir = '../sample/output/'
     output_txt = './scheme4.txt'
@@ -385,13 +381,17 @@ def main():
             'Size', 'RegAveTime', 'EncAveTime', 'SignAveTime', 'VerifyAveTime', 'TransformAveTime', 'DecAveTime'
         ))
 
-        for i in range(n):
+        for i in range(num):
             scheme4 = MJ18(groupObj)
             reg_tot, enc_tot, sgn_tot, vrf_tot, trf_tot, dec_tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
-            for j in range(n):
+            for j in range(num):
                 file_size = file_sizes[i]
                 print(f'\nFile size: {file_size} bytes, seq: {j}')
+
+                input_file = f'{input_file_dir}input_file_{file_size}.bin'
+                with open(input_file, 'rb') as f_in:
+                    m = f_in.read()
 
                 EIDa = generate_random_str(16)
                 EIDb = generate_random_str(16)
@@ -401,7 +401,6 @@ def main():
                 ESa, reg_time_ESa = scheme4.register_ES(EIDa)
                 ESb, reg_time_ESb = scheme4.register_ES(EIDb)
                 SDi, reg_time_SDi = scheme4.register_SD(RIDi)
-                reg_tot += reg_time_ESa + reg_time_ESb + reg_time_SDi
 
                 # Public keys
                 LPKesb = ESb['LPK']  
@@ -409,32 +408,23 @@ def main():
                 LPKi = SDi['LPK']
 
                 # 2. Encryption
-                input_file = f'{input_file_dir}input_file_{file_size}.bin'
-                with open(input_file, 'rb') as f_in:
-                    m = f_in.read()
-
                 CT, enc_time = scheme4.encryption_function(m, ESa, EIDb, LPKesb)
-                enc_tot += enc_time
 
                 # 3. Sign message request
                 MServ = generate_random_str(16)
                 msgi, sgn_time = scheme4.sign_request_message(MServ, SDi, EIDa, LPKesb)
-                sgn_tot += sgn_time
                 APKi = msgi['APKi']
 
                 # 4. Verify message request
                 vrf_result, vrf_time = scheme4.verify_request_message(msgi, ESb)
-                vrf_tot += vrf_time
                 if not vrf_result:
                     print(f'Verification FAILED for file size: {file_size} bytes, seq: {j}')
 
                 # 5. Transformation
                 CTb_to_i, tesb, trf_time = scheme4.transform(CT, ESb, LPKesa, LPKi, APKi)
-                trf_tot += trf_time
 
                 # 6. Decryption
                 m_output, dec_time = scheme4.decryption_function(CTb_to_i, tesb, SDi, LPKesb, APKi)
-                dec_tot += dec_time
 
                 # Write the decrypted content to a file
                 output_file = f'{output_file_dir}output_file_{file_size}_{j}.bin'
@@ -448,19 +438,28 @@ def main():
                 
                 # Compare the original file with the decrypted file
                 if compare_files(input_file, output_file):
-                    print(f'File decryption successful file size: {file_size} bytes, seq: {j}')
+                    print(f'File decryption successful for file size: {file_size} bytes, seq: {j}')
                 else:
-                    print(f'File decryption failed file size: {file_size} bytes, seq: {j}')
+                    print(f'File decryption failed for file size: {file_size} bytes, seq: {j}')
 
-                print('Total time for this run: ', reg_tot + enc_tot + sgn_tot + vrf_tot + trf_tot + dec_tot)
+                # Calculate time
+                reg_tot += reg_time_ESa + reg_time_ESb + reg_time_SDi
+                enc_tot += enc_time
+                sgn_tot += sgn_time
+                vrf_tot += vrf_time
+                trf_tot += trf_time
+                dec_tot += dec_time
+
+                total_time = reg_time_ESa + reg_time_ESb + reg_time_SDi + enc_time + sgn_time + vrf_time + trf_time + dec_time
+                print('Total time for this run: ', total_time)
 
             # Write the average times for the current file size
-            avg_reg_time = reg_tot / n
-            avg_encryption_time = enc_tot / n
-            avg_sign_time = sgn_tot / n
-            avg_verification_time = vrf_tot / n
-            avg_transformation_time = trf_tot / n
-            avg_decryption_time = dec_tot / n
+            avg_reg_time = reg_tot / num
+            avg_encryption_time = enc_tot / num
+            avg_sign_time = sgn_tot / num
+            avg_verification_time = vrf_tot / num
+            avg_transformation_time = trf_tot / num
+            avg_decryption_time = dec_tot / num
 
             out0 = str(file_sizes[i]).zfill(7)
             out1 = str(format(avg_reg_time, '.16f'))
