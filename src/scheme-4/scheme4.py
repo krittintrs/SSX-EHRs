@@ -12,7 +12,12 @@ from hashlib import sha256
 class MJ18(ABEncMultiAuth):
     def __init__(self, groupObj, verbose=False):
         ABEncMultiAuth.__init__(self)
-        # global group, H, H1, H2, H3, H4, g
+    
+        self.Serv = 'IIoT service X'
+        self.file_on_cloud = {}
+
+    def setup(self):
+        start = time.time()
 
         # Initialize pairing group
         self.group = PairingGroup('SS512')
@@ -33,10 +38,13 @@ class MJ18(ABEncMultiAuth):
         self.g = self.group.random(G1)
         self.s = self.group.random(ZR)
         self.Tc = time.time()
-        self.Serv = 'IIoT service X'
         self.omega = self.H1(self.Serv, self.s, self.Tc)
         self.W = self.g ** self.omega
-        self.file_on_cloud = {}
+
+        end = time.time()
+        rt = end - start
+
+        return rt
 
     def register_ES(self, EID):
         start = time.time()
@@ -371,21 +379,21 @@ def compare_files(file1, file2):
 def main():
     groupObj = PairingGroup('SS512')
     file_sizes = [50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
-    num = len(file_sizes)
+    seq = 5
     input_file_dir = '../sample/input/'
     output_file_dir = '../sample/output/'
     output_txt = './scheme4.txt'
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
-        f.write('{:7} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
-            'Size', 'RegAveTime', 'EncAveTime', 'SignAveTime', 'VerifyAveTime', 'TransformAveTime', 'DecAveTime'
+        f.write('{:7} {:18} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
+            'Size', 'SetupAveTime', 'RegAveTime', 'EncAveTime', 'SignAveTime', 'VerifyAveTime', 'TransformAveTime', 'DecAveTime'
         ))
 
         for i in range(len(file_sizes)):
             scheme4 = MJ18(groupObj)
-            reg_tot, enc_tot, sgn_tot, vrf_tot, trf_tot, dec_tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+            set_tot, reg_tot, enc_tot, sgn_tot, vrf_tot, trf_tot, dec_tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
-            for j in range(num):
+            for j in range(seq):
                 file_size = file_sizes[i]
                 print(f'\nFile size: {file_size} bytes, seq: {j}')
 
@@ -397,6 +405,9 @@ def main():
                 EIDb = generate_random_str(16)
                 RIDi = generate_random_str(16)
                 
+                # 0. Setup
+                set_time = scheme4.setup()
+
                 # 1. Register
                 ESa, reg_time_ESa = scheme4.register_ES(EIDa)
                 ESb, reg_time_ESb = scheme4.register_ES(EIDb)
@@ -443,6 +454,7 @@ def main():
                     print(f'File decryption failed for file size: {file_size} bytes, seq: {j}')
 
                 # Calculate time
+                set_tot += set_time
                 reg_tot += reg_time_ESa + reg_time_ESb + reg_time_SDi
                 enc_tot += enc_time
                 sgn_tot += sgn_time
@@ -450,26 +462,28 @@ def main():
                 trf_tot += trf_time
                 dec_tot += dec_time
 
-                total_time = reg_time_ESa + reg_time_ESb + reg_time_SDi + enc_time + sgn_time + vrf_time + trf_time + dec_time
+                total_time = set_time + reg_time_ESa + reg_time_ESb + reg_time_SDi + enc_time + sgn_time + vrf_time + trf_time + dec_time
                 print('Total time for this run: ', total_time)
 
             # Write the average times for the current file size
-            avg_reg_time = reg_tot / num
-            avg_encryption_time = enc_tot / num
-            avg_sign_time = sgn_tot / num
-            avg_verification_time = vrf_tot / num
-            avg_transformation_time = trf_tot / num
-            avg_decryption_time = dec_tot / num
+            avg_setup_time = set_tot / seq
+            avg_reg_time = reg_tot / seq
+            avg_encryption_time = enc_tot / seq
+            avg_sign_time = sgn_tot / seq
+            avg_verification_time = vrf_tot / seq
+            avg_transformation_time = trf_tot / seq
+            avg_decryption_time = dec_tot / seq
 
             out0 = str(file_sizes[i]).zfill(7)
-            out1 = str(format(avg_reg_time, '.16f'))
-            out2 = str(format(avg_encryption_time, '.16f'))
-            out3 = str(format(avg_sign_time, '.16f'))
-            out4 = str(format(avg_verification_time, '.16f'))
-            out5 = str(format(avg_transformation_time, '.16f'))
-            out6 = str(format(avg_decryption_time, '.16f'))
+            out1 = str(format(avg_setup_time, '.16f'))
+            out2 = str(format(avg_reg_time, '.16f'))
+            out3 = str(format(avg_encryption_time, '.16f'))
+            out4 = str(format(avg_sign_time, '.16f'))
+            out5 = str(format(avg_verification_time, '.16f'))
+            out6 = str(format(avg_transformation_time, '.16f'))
+            out7 = str(format(avg_decryption_time, '.16f'))
 
-            f.write(f'{out0} {out1} {out2} {out3} {out4} {out5} {out6}\n')
+            f.write(f'{out0} {out1} {out2} {out3} {out4} {out5} {out6} {out7}\n')
 
 if __name__ == '__main__':
     main()
