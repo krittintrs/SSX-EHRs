@@ -90,20 +90,6 @@ class MJ18(ABEncMultiAuth):
         c0k = integer(k) ^ H.hashToZn(pair(g, uby) ** z)
         c1 = g ** z
 
-        # print(f'm:    {m}')
-        
-        # int_m = Conversion.bytes2integer(m)
-        # print(f"Converted integer (int_m): {int_m}")
-        # print(f"Byte length of m: {len(m)}")
-        # print(f"Bit length of int_m: {int(int_m).bit_length()}")
-
-        # hashed_value = H.hashToZn(pair(g, uby) ** z)
-        # print(f"Hash output (hashed_value): {hashed_value}")
-        # print(f"Bit length of hashed_value: {int(hashed_value).bit_length()}")
-        
-        # print(f'c0m:  {len(str(c0m))}')
-        # print(f'c0k:  {len(str(c0k))}')
-
         g0 = pp['g0']
         g1 = pp['g1']
         g2n = pp['g2n']
@@ -207,19 +193,10 @@ class MJ18(ABEncMultiAuth):
 
         c = ct['c']
         test = (sigma ** H.hashToZr(mnum)) * (mu ** H.hashToZr(knum))
-        
-        # print(f"A hashed: {H.hashToZn(A)}")
-        # print(f"mnum size: {len(str(mnum))}, knum size: {len(str(knum))}")
-        # print(f"test: {test}, c: {c}, ele1: {ele1}")
-
         if (c / test == ele1):
-            m = int2Bytes(mnum)
+            m = int2Bytes(mnum).decode("utf-8")
             k = int2Bytes(knum)
-        else:
-            print('!!! DEC 1 FAILED !!!')
-            m = int2Bytes(mnum)
-            k = int2Bytes(knum)
-            
+
         end = time.time()
         rt = end - start
         return m, rt
@@ -252,11 +229,7 @@ class MJ18(ABEncMultiAuth):
         c = ct['c']
         test = (sigma ** H.hashToZr(mnum)) * (mu ** H.hashToZr(knum))
         if (c / test == ele1):
-            m = int2Bytes(mnum)
-            k = int2Bytes(knum)
-        else:
-            print('!!! DEC 2 FAILED !!!')
-            m = int2Bytes(mnum)
+            m = int2Bytes(mnum).decode("utf-8")
             k = int2Bytes(knum)
 
         end = time.time()
@@ -402,11 +375,8 @@ def register_function(n, msk):
 
 
 def generate_random_str(length):
-    random_str = ''
-    base_str = 'helloworlddfafj23i4jri3jirj23idaf2485644f5551jeri23jeri23ji23'
-    for i in range(length):
-        random_str += base_str[random.randint(0, len(base_str) - 1)]
-    return random_str
+    base_str = string.ascii_letters + string.digits  
+    return ''.join(random.choices(base_str, k=length))
 
 
 def coeffs_function(n, inputarray):
@@ -432,11 +402,8 @@ def compare_files(file1, file2):
 
 def main():
     groupObj = PairingGroup('SS512')
-    file_sizes = [50_000, 100_000, 128_000, 200_000, 400_000, 800_000, 1_600_000]
-    # file_sizes = [120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130]
-    num = 5
-    input_file_dir = '../sample/input/'
-    output_file_dir = '../sample/output/'
+    string_length = [50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
+    seq = 5
     output_txt = './VFPPBA.txt'
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
@@ -444,30 +411,25 @@ def main():
             'Size', 'SetupAveTime', 'RegAveTime', 'EncAveTime', 'Dec1AveTime', 'AuthAveTime', 'TransformAveTime', 'Dec2AveTime'
         ))
 
-        for i in range(len(file_sizes)):
+        for i in range(len(string_length)):
             vfppba = MJ18(groupObj)
             set_tot, reg_tot, enc_tot, dec1_tot, auth_tot, trf_tot, dec2_tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
-            for j in range(num):
-                file_size = file_sizes[i]
-                print(f'\nFile size: {file_size} bytes, seq: {j}')
-            
-                input_file = f'{input_file_dir}input_file_{file_size}.bin'
-                with open(input_file, 'rb') as f_in:
-                    rm = f_in.read()
+            for j in range(seq):
+                str_len = string_length[i]
+                print(f'\nString length: {str_len} char, seq: {j}')
 
-                # 0. Setup phase
                 n = 32
+                rm = generate_random_str(str_len)
+                rk = generate_random_str(n)
+                
+                # 0. Setup phase
                 pp, msk, set_time = vfppba.setup_vfippre(n)
                 
                 # 1. Register phase
                 sk, sk1, x, x1, reg_time = vfppba.register_vfippre(n, msk)
                 
                 # 2. Encryption phase
-                # rk = generate_random_str(n)
-                from hashlib import sha256
-                rk = sha256(rm).digest()
-                print(f'rm size: {len(rm)} / rk size: {len(rk)}')
                 ct, m, k, enc_time = vfppba.enc_vfippre(n, x, rm, rk, pp)
                 
                 # 3. Authorization phase
@@ -482,26 +444,16 @@ def main():
                 # 6. Decryption 2 phase
                 M_output_2, k, dec2_time = vfppba.dec2_function(n, sk1, ct, ctxw)
 
-                # Write the decrypted content to a file
-                output_file_1 = f'{output_file_dir}output_file_dec1_{file_size}_{j}.bin'
-                output_file_2 = f'{output_file_dir}output_file_dec2_{file_size}_{j}.bin'
-
-                with open(output_file_1, 'wb') as f_out_1:
-                    f_out_1.write(M_output_1)
-
-                with open(output_file_2, 'wb') as f_out_2:
-                    f_out_2.write(M_output_2)
-
-                # Compare the original file with the decrypted files
-                if compare_files(input_file, output_file_1):
-                    print(f'Decryption 1 successful for file size: {file_size} bytes, seq: {j}')
+                # Compare the original string and output string
+                if rm == M_output_1:
+                    print(f'Decryption 1 successful for string length: {str_len} char, seq: {j}')
                 else:
-                    print(f'Decryption 1 failed for file size: {file_size} bytes, seq: {j}')
+                    print(f'Decryption 1 failed for string length: {str_len} char, seq: {j}')
 
-                if compare_files(input_file, output_file_2):
-                    print(f'Decryption 2 successful for file size: {file_size} bytes, seq: {j}')
+                if rm == M_output_2:
+                    print(f'Decryption 2 successful for string length: {str_len} char, seq: {j}')
                 else:
-                    print(f'Decryption 2 failed for file size: {file_size} bytes, seq: {j}')
+                    print(f'Decryption 2 failed for string length: {str_len} char, seq: {j}')
 
                 # Calculate time
                 set_tot += set_time
@@ -516,15 +468,15 @@ def main():
                 print('Total time for this run: ', total_time)
 
             # Write the average times for the current file size
-            avg_setup_time = set_tot / num
-            avg_register_time = reg_tot / num
-            avg_encryption_time = enc_tot / num
-            avg_dec1_time = dec1_tot / num
-            avg_authorize_time = auth_tot / num
-            avg_transform_time = trf_tot / num
-            avg_dec2_time = dec2_tot / num
+            avg_setup_time = set_tot / seq
+            avg_register_time = reg_tot / seq
+            avg_encryption_time = enc_tot / seq
+            avg_dec1_time = dec1_tot / seq
+            avg_authorize_time = auth_tot / seq
+            avg_transform_time = trf_tot / seq
+            avg_dec2_time = dec2_tot / seq
 
-            out0 = str(file_sizes[i]).zfill(7)
+            out0 = str(string_length[i]).zfill(7)
             out1 = str(format(avg_setup_time, '.16f'))
             out2 = str(format(avg_register_time, '.16f'))
             out3 = str(format(avg_encryption_time, '.16f'))
