@@ -164,7 +164,7 @@ def decrypt_file_aes(name, key):
 
 ## DECRYPT
 
-def decryption(name, padded_aes_key):
+def decryption(name, padded_aes_key, input_file):
 
     start_time = time.time()
     # Step 1: decrypt padded AES KEY with cpabe key
@@ -179,7 +179,6 @@ def decryption(name, padded_aes_key):
 
     total_time = stop_time - start_time
 
-    input_file = os.path.join(PLAIN_FILE_PATH, name)
     output_file = os.path.join(DEC_FILE_PATH, "dec_{}".format(name))
 
     # Compare the original file with the decrypted file
@@ -285,7 +284,7 @@ def main():
                 
                 #---DECRYPT---#
                 padded_aes_key_name = "dec_padded_aes_key_" + name
-                dec_time = decryption(name, padded_aes_key_name)
+                dec_time = decryption(name, padded_aes_key_name, input_file)
 
                 dec_tot += dec_time
                 #---END DECRYPT---#
