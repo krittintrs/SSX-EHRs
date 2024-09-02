@@ -1,0 +1,1 @@
+Size    EncAveTime         AesEncAveTime      CpabeAveTime       ??TIME             PREAveTime         DecAveTime        
