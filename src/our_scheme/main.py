@@ -1,15 +1,22 @@
 import os
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
+from charm.toolbox.symcrypto import SymmetricCryptoAbstraction
+import filecmp
+import random
+import time
+from charm.toolbox.pairinggroup import PairingGroup, ZR, G1, G2, GT, pair
+from charm.toolbox.hash_module import Hash
+from charm.toolbox.symcrypto import SymmetricCryptoAbstraction
+from charm.toolbox.ABEncMultiAuth import ABEncMultiAuth
+from charm.core.math.integer import integer
+from hashlib import sha256
 import subprocess 
 import time
 import filecmp
 
 # Constants
-AES_KEY_SIZE = 32  # 256 bits
-start_pad_size=16 # 128 bits
-end_pad_size=16 # 128 bits
-IV_SIZE = 12  # 96 bits for GCM mode
+AES_KEY_SIZE = 32   # AES-256 
 
 FILE_PATH = './file'
 PLAIN_FILE_PATH = os.path.join(FILE_PATH,'plain_file')
@@ -17,201 +24,186 @@ ENC_FILE_PATH = os.path.join(FILE_PATH,'encrypted_file')
 DEC_FILE_PATH = os.path.join(FILE_PATH,'decrypted_file')
 
 KEY_PATH = "./key"
-# AES_KEY_PATH = os.path.join(KEY_PATH, "aes_key")
 ENC_KEY_PATH = os.path.join(KEY_PATH, "encrypted_aes_key")
 PUB_KEY_PATH = os.path.join(KEY_PATH, "pub_key")
 MASTER_KEY_PATH = os.path.join(KEY_PATH, "master_key")
 
 CPABE_PATH = './cpabe-0.11'
 
+class MJ18(ABEncMultiAuth):
+    def __init__(self, groupObj, verbose=False):
+        ABEncMultiAuth.__init__(self)
 
-## ENCRYPT
+        self.start_pad_size = 16     # 128 bits
+        self.end_pad_size = 16       # 128 bits
 
-# Step 1: AES Encryption of the file
-def encrypt_file_aes(plaintext, key):
-    # Generate a random IV for GCM mode
-    # file_path = os.path.join(PLAIN_FILE_PATH,name)
-    # enc_file = os.path.join(ENC_FILE_PATH,'enc_'+name)
+    def setup(self):
+        start = time.time()
 
-    iv = os.urandom(IV_SIZE)
-    
-    # Create AES-GCM Cipher object
-    encryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv),
-        backend=default_backend()
-    ).encryptor()
-    
-    # # Read the file data
-    # with open(file_path, 'rb') as f:
-    #     plaintext = f.read()
-    
-    # Encrypt the data
-    ciphertext = encryptor.update(plaintext) + encryptor.finalize()
-    
-    # # Write the encrypted data to a file
-    # with open(enc_file, 'wb') as f:
-    #     f.write(iv + encryptor.tag + ciphertext)
-    
-    return ciphertext, encryptor.tag, iv
+        end = time.time()
+        rt = end - start
 
-# Step 2: Padding the AES key at the start and end
-def pad_aes_key(key):
+        return rt
+
+    def keygen(self):
+        start = time.time()
+
+        end = time.time()
+        rt = end - start
+
+        return rt
+
+    def encryption(self, EHR, aes_key, pub_key, policy, name): # name for output of cpabe enc
+        start = time.time()
+
+        # STEP 1: Encrypt the file with AES
+        CT_EHR, enc_file_time = enc_file_aes(EHR, aes_key)
+
+        # STEP 2: Pad the AES key
+        padded_key = pad_aes_key(aes_key, self.start_pad_size, self.end_pad_size)
+
+        # STEP 3: Encrypt the padded AES key with CP-ABE
+        CT_padded_key_name, enc_aes_key_time = enc_key_cpabe(padded_key, policy, name, pub_key)
+        
+        end = time.time()
+        rt = end - start
+        
+        print(f'''
+            ========================================================
+            Time that use for ENCRYPT --- {name} file --- is 
+            
+            TOTAL ENC TIME    =>  {rt} secs
+            ENC FILE TIME     =>  {enc_file_time} secs
+            ENC AES KEY TIME  =>  {enc_aes_key_time} secs
+            --------------------------------------------------------''')
+        
+        return CT_EHR, CT_padded_key_name, rt
+    
+    def reencryption(self):
+        start = time.time()
+
+        end = time.time()
+        rt = end - start
+
+        return rt
+
+    def decryption1(self, CT_EHR, CT_padded_key_name):
+        start = time.time()
+
+        # Step 1: decrypt padded AES KEY with cpabe key
+        priv_key = "test_priv"
+        padded_aes_key, dec_aes_key_time = dec_key_cpabe(CT_padded_key_name, priv_key)
+
+        # Step 2: Unpad AES KEY and decrypt file with unpadded AES KEY
+        aes_key = unpad_aes_key(padded_aes_key)
+        EHR, dec_file_time = dec_file_aes(CT_EHR, aes_key)
+
+        end = time.time()
+        rt = end - start
+
+        return EHR, rt
+    
+    def decryption2(self):
+        start = time.time()
+
+        end = time.time()
+        rt = end - start
+
+        return rt
+
+def enc_file_aes(plaintext, key):
+    start = time.time()
+    # Ensure the key size is correct (32 bytes for AES-256)
+    if len(key) != AES_KEY_SIZE:
+        raise ValueError("Key must be 32 bytes long for AES-256.")
+    
+    # Initialize the symmetric encryption abstraction with AES
+    symmetric_key = SymmetricCryptoAbstraction(key)
+    CT = symmetric_key.encrypt(plaintext)
+    
+    end = time.time()
+    rt = end - start
+
+    return CT, rt
+
+def pad_aes_key(key, start_pad_size, end_pad_size):
     start_padding = os.urandom(start_pad_size)  # Generate random 128-bit (16 bytes) padding for the start
     end_padding = os.urandom(end_pad_size)      # Generate random 128-bit (16 bytes) padding for the end
     
-    # Combine start padding, key, and end padding
     padded_key = start_padding + key + end_padding
     return padded_key
 
-# Step 3: Encrypt the padded AES key with CP-ABE
-def encrypt_key_cpabe(padded_key, policy, name, pub_key):
+def enc_key_cpabe(padded_key, policy, name, pub_key):
+    start = time.time()
+
     # Write the padded key to a temporary file
     with open('temp_padded_key.bin', 'wb') as f:
         f.write(padded_key)
     
     # Use the CP-ABE Docker image to encrypt the key
     cpabe_enc = os.path.join(CPABE_PATH,'cpabe-enc')
-    file_name = "enc_padded_aes_key_" + name
-    output_path = os.path.join(KEY_PATH,file_name)
+    CT_padded_key_name = "enc_padded_aes_key_" + name
+    output_path = os.path.join(KEY_PATH, CT_padded_key_name)
 
     subprocess.run([cpabe_enc, '-k', pub_key, 'temp_padded_key.bin', policy, '-o', output_path], check=True)
     
     # Clean up the temporary file
     os.remove('temp_padded_key.bin')
 
-def encryption(plaintext, aes_key, pub_key, policy, name): # name for output of cpabe enc
+    end = time.time()
+    rt = end - start
 
- # STEP 1: Encrypt the file with AES
-    start_time = time.time()
-    start_enc_file_time = time.time()
-    ciphertext, encryptor, iv = encrypt_file_aes(plaintext, aes_key)
-    stop_enc_file_time = time.time()
+    return CT_padded_key_name, rt
 
- # STEP 2: Pad the AES key
-    start_enc_aes_key_time = time.time()
-    padded_key = pad_aes_key(aes_key)
+def dec_file_aes(CT_EHR, key):
+    start = time.time()
 
- # STEP 3: Encrypt the padded AES key with CP-ABE
-    encrypt_key_cpabe(padded_key, policy, name, pub_key)
-    stop_enc_aes_key_time = time.time()
-    stop_time = time.time()
+    # Ensure the key size is correct (32 bytes for AES-256)
+    if len(key) != AES_KEY_SIZE:
+        raise ValueError("Key must be 32 bytes long for AES-256.")
 
-    enc_file_time = stop_enc_file_time - start_enc_file_time
-    enc_aes_key_time = stop_enc_aes_key_time - start_enc_aes_key_time
-    total_time = stop_time-start_time
+    symmetric_key = SymmetricCryptoAbstraction(key)
+    EHR = symmetric_key.decrypt(CT_EHR)
     
-    print(f'''
-          ========================================================
-          Time that use for ENCRYPT --- {name} file --- is 
-          
-          TOTAL ENC TIME    =>  {total_time} secs
-          ENC FILE TIME     =>  {enc_file_time} secs
-          ENC AES KEY TIME  =>  {enc_aes_key_time} secs
-          --------------------------------------------------------''')
-    return ciphertext, encryptor, iv, total_time, enc_file_time, enc_aes_key_time
-#=========================END ENCYPRT===========================#
+    end = time.time()
+    rt = end - start
 
-
-## DECRYPT
-# Step 1: Decrypt padded AES KEY with cpabe key
-def decrypt_key_cpabe(name, priv_key):
-    cpabe_dec = os.path.join(CPABE_PATH,'cpabe-dec')
-    PRIV_KEY_PATH = os.path.join(KEY_PATH,priv_key) 
-    enc_padded_aes_key = "enc_padded_aes_key_" + name
-    padded_aes_key_path = os.path.join(KEY_PATH,enc_padded_aes_key)
-    output_name = "dec_padded_aes_key_"+name
-    output_path = os.path.join(KEY_PATH, output_name)
-
-    subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, PRIV_KEY_PATH, padded_aes_key_path, "-o", output_path])
-
-# Step 2: Unpad decrypted padded AES KEY
-def unpad_aes_key(padded_aes_key):
-    padded_aes_key_path = os.path.join(KEY_PATH,padded_aes_key)
-
-    with open(padded_aes_key_path, 'rb') as f:
-        padded_aes_key = f.read()
+    return EHR, rt
     
-    unpadded_aes_key = padded_aes_key[start_pad_size:-end_pad_size]
+def unpad_aes_key(padded_aes_key, start_pad_size, end_pad_size):
+    unpadded_aes_key = padded_aes_key[start_pad_size : -end_pad_size]
 
     return unpadded_aes_key
 
-# Step 3: Decrypt encrypted file with unpadded AES KEY
-def decrypt_file_aes(name, key):
-    # Read the encrypted data
-    enc_file_path = os.path.join(ENC_FILE_PATH, "enc_"+name)
-    with open(enc_file_path, 'rb') as f:
-        iv = f.read(IV_SIZE)  # Extract the IV (first 12 bytes)
-        tag = f.read(16)       # Extract the tag (next 16 bytes)
-        ciphertext = f.read()  # The rest is the ciphertext
+def dec_key_cpabe(CT_padded_key_name, priv_key):
+    start = time.time()
+
+    # CPABE & PK path
+    cpabe_dec = os.path.join(CPABE_PATH, 'cpabe-dec')
+    PRIV_KEY_PATH = os.path.join(KEY_PATH, priv_key) 
+
+    # Input path (CT_padded_key)
+    input_path = os.path.join(KEY_PATH, CT_padded_key_name)
+
+    # Output path (padded_key)
+    prefix = "enc_padded_aes_key_"
+    padded_key_name = "dec_padded_aes_key_" + CT_padded_key_name[len(prefix):]
+    output_path = os.path.join(KEY_PATH, padded_key_name)
+
+    # Perform CP-ABE
+    subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, PRIV_KEY_PATH, input_path, "-o", output_path])
     
-    # Create AES-GCM Cipher object for decryption
-    decryptor = Cipher(
-        algorithms.AES(key),
-        modes.GCM(iv, tag),
-        backend=default_backend()
-    ).decryptor()
-    
-    # Decrypt the data
-    plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+    # Read the padded_key to return
+    padded_aes_key_path = output_path
+    with open(output_path, 'rb') as f:
+        padded_aes_key = f.read()
 
-    dec_file = "dec_"+name
-    dec_file_path = os.path.join(DEC_FILE_PATH,dec_file)
-    with open(dec_file_path, 'wb') as f:
-        f.write(plaintext)
-    
-    return plaintext
+    end = time.time()
+    rt = end - start
 
-## DECRYPT
+    return padded_aes_key, rt
 
-def decryption(name, padded_aes_key, input_file):
-
-    start_time = time.time()
-    # Step 1: decrypt padded AES KEY with cpabe key
-    priv_key = "test_priv"
-    decrypt_key_cpabe(name,priv_key)
-
-    # Step 2: Unpad AES KEY and decrypt file with unpadded AES KEY
-    unpadded_aes_key = unpad_aes_key(padded_aes_key)
-    decrypt_file_aes(name,unpadded_aes_key)
-
-    stop_time = time.time()
-
-    total_time = stop_time - start_time
-
-    output_file = os.path.join(DEC_FILE_PATH, "dec_{}".format(name))
-
-    # Compare the original file with the decrypted file
-    if compare_files(input_file, output_file):
-        print(f'          File decryption ✅✅successful✅✅ file size: {name}')
-    else:
-        print(f'          File decryption ❌❌failed❌❌ file size: {name}')
-
-    print(f'''          
-          Time that use for DECRYPT --- {name} file --- is 
-        
-          TOTAL DEC TIME    =>  {total_time} secs
-          ========================================================
-          ''')
-    return total_time
-#=========================END DECYPRT===========================#
-
-## Utilize FUNC
-# Function to Generate file with specific size
-def generate_file_MB(filename, size_mb):
-    # Size in bytes
-    size_bytes = size_mb * 1024 * 1024
-    file_path = os.path.join(PLAIN_FILE_PATH,filename)
-    # Generate random data
-    with open(file_path, 'wb') as f:
-        f.write(os.urandom(size_bytes))
-
-def generate_file_byte(filename, size_bytes):
-    # Size in bytes
-    file_path = os.path.join(PLAIN_FILE_PATH,filename)
-    # Generate random data
-    with open(file_path, 'wb') as f:
-        f.write(os.urandom(size_bytes))
+#=========================Utilize===========================#
 
 def generate_aes_key(name):
     key_name = "aes_key_" + name
@@ -231,11 +223,12 @@ def use_aes_key(name):
 def compare_files(file1, file2):
     return filecmp.cmp(file1, file2, shallow=False)
 
-#=========================END Utilize===========================#
-# Main Function
+#=========================Utilize===========================#
+
 def main():
+    groupObj = PairingGroup('SS512')
     file_sizes = [50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
-    n = len(file_sizes)
+    seq = 5
     input_file_dir = '../sample/input/'
     output_file_dir = '../sample/output/'
     output_txt = './our.txt'
@@ -245,66 +238,80 @@ def main():
             'Size', 'EncAveTime', 'AesEncAveTime', 'CpabeAveTime', '??TIME', 'PREAveTime', 'DecAveTime'
         ))
 
-        for i in range(n):
-            enc_tot, aes_enc_tot, cp_enc_tot, unknown_tot , pre_tot, dec_tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        for i in range(len(file_sizes)):
+            ssxehr = MJ18(groupObj)
+            set_tot, key_tot, enc_tot, dec1_tot, pre_tot, dec2_tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
-            for j in range(n):
+            for j in range(seq):
                 #---ENCRYPT---#
                 file_size = file_sizes[i]
                 print(f'\nFile size: {file_size} bytes, seq: {j}')
 
-                name = str(file_size)+"bytes"
-
-                # Policy for encrypt with CPABE
+                name = str(file_size) + "bytes"
                 policy = "((A and B) or (C and D)) and E"
-
-                # Generate a random AES key
                 generate_aes_key(name)
                 aes_key = use_aes_key(name)
-
                 pub_key = PUB_KEY_PATH
 
-                # get plain text
-                input_file = f'{input_file_dir}input_file_{file_size}.bin'
+                input_file = f'{input_file_dir}input_file_{file_size}_{j}.bin'
                 with open(input_file, 'rb') as f_in:
-                    plaintext = f_in.read()
+                    EHR = f_in.read()
 
-                # encrypt
-                ciphertext, encryptor, iv, enc_time, aes_enc_time, cp_enc_time = encryption(plaintext, aes_key, pub_key, policy, name)
+                # 1. Setup
+                set_time = ssxehr.setup()
+
+                # 2. Key Generation
+                key_time = ssxehr.keygen()
+
+                # 3. Encryption
+                CT_EHR, CT_padded_key_name, enc_time = ssxehr.encryption(EHR, aes_key, pub_key, policy, name)
                 
-                # output file
-                enc_file = os.path.join(ENC_FILE_PATH,'enc_'+name)
-                with open(enc_file, 'wb') as file:
-                    file.write(iv + encryptor+ ciphertext)
+                # 4. Re-encryption
+                pre_time = ssxehr.reencryption()
 
+                # 5. Decryption 1
+                EHR_output1, dec1_time = ssxehr.decryption1(name, CT_EHR, CT_padded_key_name)
+                
+                # 6. Decryption 2
+                dec2_time = ssxehr.decryption2()
+
+                # Output file
+                output_file = f'{output_file_dir}output_file_{file_size}_{j}.bin'
+                with open(output_file, 'wb') as f_out:
+                    f_out.write(EHR_output1)
+
+                # Compare the original file with the decrypted file
+                if compare_files(input_file, output_file):
+                    print(f'          File decryption ✅✅successful✅✅ file size: {name}')
+                else:
+                    print(f'          File decryption ❌❌failed❌❌ file size: {name}')
+                    
+                # Calculate time
+                set_tot += set_time
+                key_tot += key_time
                 enc_tot += enc_time
-                aes_enc_tot += aes_enc_time
-                cp_enc_tot += cp_enc_time
-                #---END ENCRYPT---#
-                
-                #---DECRYPT---#
-                padded_aes_key_name = "dec_padded_aes_key_" + name
-                dec_time = decryption(name, padded_aes_key_name, input_file)
+                pre_tot += pre_time
+                dec1_tot += dec1_time
+                dec2_tot += dec2_time
 
-                dec_tot += dec_time
-                #---END DECRYPT---#
-                print(f"Total time for this run: ",enc_tot+aes_enc_tot+cp_enc_tot+unknown_tot+pre_tot+dec_tot)
+                total_time = set_time + key_time + enc_time + pre_time + dec1_time + dec2_time
+                print('Total time for this run: ', total_time)
 
             # Write the average times for the current file size
-            avg_enc_time = enc_tot / n
-            avg_aes_enc_time = aes_enc_tot / n
-            avg_cp_enc_time = cp_enc_tot / n
-            avg_pre_time = pre_tot / n
-            avg_unknown_time = unknown_tot / n
-            avg_decryption_time = dec_tot / n
+            avg_set_time = set_tot / seq
+            avg_key_time = key_tot / seq
+            avg_enc_time = enc_tot / seq
+            avg_pre_time = pre_tot / seq
+            avg_dec1_time = dec1_tot / seq
+            avg_dec2_time = dec2_tot / seq
 
             out0 = str(file_sizes[i]).zfill(7)
-            out1 = str(format(avg_enc_time, '.16f'))
-            out2 = str(format(avg_aes_enc_time, '.16f'))
-            out3 = str(format(avg_cp_enc_time, '.16f'))
-            out4 = str(format(avg_unknown_time, '.16f'))
-            out5 = str(format(avg_pre_time, '.16f'))
-            out6 = str(format(avg_decryption_time, '.16f'))
+            out1 = str(format(avg_set_time, '.16f'))
+            out2 = str(format(avg_key_time, '.16f'))
+            out3 = str(format(avg_enc_time, '.16f'))
+            out4 = str(format(avg_pre_time, '.16f'))
+            out5 = str(format(avg_dec1_time, '.16f'))
+            out6 = str(format(avg_dec2_time, '.16f'))
 
             f.write(f'{out0} {out1} {out2} {out3} {out4} {out5} {out6}\n')
 
