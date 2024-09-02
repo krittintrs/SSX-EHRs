@@ -7,6 +7,7 @@
 """
 import filecmp
 import random
+import string
 
 from charm.toolbox.pairinggroup import PairingGroup, ZR, G1, G2, GT, pair
 from charm.toolbox.ABEncMultiAuth import ABEncMultiAuth
@@ -14,12 +15,9 @@ import time
 import numpy as np
 from charm.toolbox.hash_module import Hash
 from charm.core.math.integer import integer, int2Bytes
-from charm.toolbox.conversion import Conversion
 from sympy import *
 import sys
 sys.path.append('../')
-from common.image import *
-from common.msp import *
 
 
 class MJ18(ABEncMultiAuth):
