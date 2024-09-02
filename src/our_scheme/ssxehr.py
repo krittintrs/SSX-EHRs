@@ -90,10 +90,7 @@ class MJ18(ABEncMultiAuth):
         
         end = time.time()
         rt = end - start
-        
-        # TODO: remove test
-        global test_aes_key
-        test_aes_key = padded_key
+
 
         return CT_EHR, CT_padded_key_name, rt
 
@@ -215,9 +212,8 @@ def enc_key_cpabe(padded_key, policy, file_size, cpabe_pk):
     CT_padded_key_name = "enc_padded_aes_key_" + str(file_size)
     output_path = os.path.join(KEY_PATH, CT_padded_key_name)
 
-    # TODO: remove test
     # Perform CP-ABE encryption
-    # subprocess.run([cpabe_enc, '-k', cpabe_pk, 'temp_padded_key.bin', policy, '-o', output_path], check=True)
+    subprocess.run([cpabe_enc, '-k', cpabe_pk, 'temp_padded_key.bin', policy, '-o', output_path], check=True)
     
     # Clean up the temporary file
     os.remove('temp_padded_key.bin')
@@ -227,7 +223,7 @@ def enc_key_cpabe(padded_key, policy, file_size, cpabe_pk):
 def dec_key_cpabe(CT_padded_key_name, cpabe_sk):
     # CPABE & PK path
     cpabe_dec = os.path.join(CPABE_PATH, 'cpabe-dec')
-    SECREcT_KEY_PATH = os.path.join(KEY_PATH, cpabe_sk) 
+    SECRET_KEY_PATH = os.path.join(KEY_PATH, cpabe_sk) 
 
     # Input path (CT_padded_key)
     input_path = os.path.join(KEY_PATH, CT_padded_key_name)
@@ -238,14 +234,12 @@ def dec_key_cpabe(CT_padded_key_name, cpabe_sk):
     padded_key_name = "dec_padded_aes_key_" + str(file_size)
     output_path = os.path.join(KEY_PATH, padded_key_name)
 
-    # TODO: remove test
     # Perform CP-ABE decryption
-    # subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, SECRET_KEY_PATH, input_path, "-o", output_path])
+    subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, SECRET_KEY_PATH, input_path, "-o", output_path])
     
     # Read the padded_key to return
-    # with open(padded_key_name, 'rb') as f:
-    #     padded_aes_key = f.read()
-    padded_aes_key = test_aes_key
+    with open(padded_key_name, 'rb') as f:
+        padded_aes_key = f.read()
 
     return padded_aes_key
 
