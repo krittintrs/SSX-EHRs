@@ -54,11 +54,8 @@ class MJ18(ABEncMultiAuth):
         start = time.time()
 
         # ECC Key Gen
-        # Generate key pair
         groupObj = ECGroup(prime192v2)
         self.elgamal = ElGamal(groupObj)   
-
-        # Generate key pair
         (ecc_pub_key, ecc_priv_key) = self.elgamal.keygen()
 
         # AES Key Gen
@@ -83,25 +80,16 @@ class MJ18(ABEncMultiAuth):
         start = time.time()
 
         # STEP 1: Encrypt the file with AES
-        CT_EHR, enc_file_time = enc_file_aes(EHR, aes_key)
+        CT_EHR = enc_aes(EHR, aes_key)
 
         # STEP 2: Pad the AES key
         padded_key = pad_aes_key(aes_key, self.start_pad_size, self.end_pad_size)
 
         # STEP 3: Encrypt the padded AES key with CP-ABE
-        CT_padded_key_name, enc_aes_key_time = enc_key_cpabe(padded_key, policy, file_size, pub_key)
+        CT_padded_key_name = enc_key_cpabe(padded_key, policy, file_size, pub_key)
         
         end = time.time()
         rt = end - start
-        
-        # print(f'''
-        #     ========================================================
-        #     Time that use for ENCRYPT --- {file_size} file --- is 
-            
-        #     TOTAL ENC TIME    =>  {rt} secs
-        #     ENC FILE TIME     =>  {enc_file_time} secs
-        #     ENC AES KEY TIME  =>  {enc_aes_key_time} secs
-        #     --------------------------------------------------------''')
         
         # TODO: remove test
         global test_aes_key
@@ -113,13 +101,13 @@ class MJ18(ABEncMultiAuth):
         start = time.time()
 
         # Step 1: decrypt padded AES KEY with cpabe key
-        padded_aes_key, dec_aes_key_time = dec_key_cpabe(CT_padded_key_name, cpabe_sk)
+        padded_aes_key = dec_key_cpabe(CT_padded_key_name, cpabe_sk)
 
         # Step 2: Unpad AES KEY and decrypt file with unpadded AES KEY
         aes_key = unpad_aes_key(padded_aes_key, self.start_pad_size, self.end_pad_size)
 
         # Step 3: decrypt CT EHR using AES key
-        EHR, dec_file_time = dec_file_aes(CT_EHR, aes_key)
+        EHR = dec_aes(CT_EHR, aes_key)
 
         end = time.time()
         rt = end - start
@@ -150,24 +138,14 @@ class MJ18(ABEncMultiAuth):
         start = time.time()
 
         # CP-ABE Decryption
+        # TODO: add secret key generation for proxy gateway
         PG_cpabe_sk = "secret key of proxy gateway"
-        padded_aes_key, dec_aes_key_time = dec_key_cpabe(CT_padded_key_name, PG_cpabe_sk)
+        padded_aes_key = dec_key_cpabe(CT_padded_key_name, PG_cpabe_sk)
 
         # ECC Re-encryption
         k = os.urandom(20)
         enc_k = self.elgamal.encrypt(ecc_pub_key, k)
-        RE_padded_aes_key, enc_time = enc_file_aes(padded_aes_key, k)
-
-        print(f'\n >> RE-ENC << ')
-        # print(f'padded_aes_key: {padded_aes_key}')
-        print(f'k: {k} / {type(k)}')
-        print(f'Length of padded_aes_key: {len(padded_aes_key)}')
-        # print(f'RE_padded_aes_key: {RE_padded_aes_key}')
-        print(f'Length of RE_padded_aes_key: {len(RE_padded_aes_key)}')
-        # print(f'ecc_pub_key: {ecc_pub_key}')
-
-        padded_aes_key, dec_time = dec_file_aes(RE_padded_aes_key, k)
-        print(f'padded_aes_key: {padded_aes_key}')
+        RE_padded_aes_key = enc_aes(padded_aes_key, k)
 
         end = time.time()
         rt = end - start
@@ -180,22 +158,13 @@ class MJ18(ABEncMultiAuth):
         # Step 1: decrypt padded AES KEY with ECC private key
         k = self.elgamal.decrypt(ecc_pub_key, ecc_priv_key, enc_k)
         print(f'k: {k} / {type(k)}')
-        padded_aes_key, dec_time = dec_file_aes(RE_padded_aes_key, k)
+        padded_aes_key = dec_aes(RE_padded_aes_key, k)
 
         # Step 2: Unpad AES KEY and decrypt file with unpadded AES KEY
         aes_key = unpad_aes_key(padded_aes_key, self.start_pad_size, self.end_pad_size)
 
-        print(f'\n >> DEC 2 << ')
-        # print(f'RE_padded_aes_key: {RE_padded_aes_key}')
-        print(f'Length of RE_padded_aes_key: {len(RE_padded_aes_key)}')
-        # print(f'padded_aes_key: {padded_aes_key}')
-        print(f'Length of padded_aes_key: {len(padded_aes_key)}')
-        print(f'aes_key: {aes_key}')
-        # print(f'ecc_pub_key: {ecc_pub_key}')
-        # print(f'ecc_priv_key: {ecc_priv_key}')
-
         # Step 3: decrypt CT EHR using AES key
-        EHR, dec_file_time = dec_file_aes(CT_EHR, aes_key)
+        EHR = dec_aes(CT_EHR, aes_key)
 
         end = time.time()
         rt = end - start
@@ -214,27 +183,15 @@ def integer_element_to_bytes(int_elem):
     hed_int = int_value >> (original_length.bit_length() + 7)
     return hed_int.to_bytes(original_length, byteorder='big', signed=False)
 
-def enc_file_aes(m, key):
-    start = time.time()
-
+def enc_aes(m, key):
     symmetric_key = SymmetricCryptoAbstraction(key)
     CT = symmetric_key.encrypt(m)
-    
-    end = time.time()
-    rt = end - start
+    return CT
 
-    return CT, rt
-
-def dec_file_aes(CT, key):
-    start = time.time()
-
+def dec_aes(CT, key):
     symmetric_key = SymmetricCryptoAbstraction(key)
     m = symmetric_key.decrypt(CT)
-    
-    end = time.time()
-    rt = end - start
-
-    return m, rt
+    return m
 
 def pad_aes_key(aes_key, start_pad_size, end_pad_size):
     start_padding = os.urandom(start_pad_size)  
@@ -249,8 +206,6 @@ def unpad_aes_key(padded_aes_key, start_pad_size, end_pad_size):
     return aes_key
 
 def enc_key_cpabe(padded_key, policy, file_size, cpabe_pk):
-    start = time.time()
-
     # Write the padded key to a temporary file
     with open('temp_padded_key.bin', 'wb') as f:
         f.write(padded_key)
@@ -267,14 +222,9 @@ def enc_key_cpabe(padded_key, policy, file_size, cpabe_pk):
     # Clean up the temporary file
     os.remove('temp_padded_key.bin')
 
-    end = time.time()
-    rt = end - start
-
-    return CT_padded_key_name, rt
+    return CT_padded_key_name
 
 def dec_key_cpabe(CT_padded_key_name, cpabe_sk):
-    start = time.time()
-
     # CPABE & PK path
     cpabe_dec = os.path.join(CPABE_PATH, 'cpabe-dec')
     SECREcT_KEY_PATH = os.path.join(KEY_PATH, cpabe_sk) 
@@ -297,10 +247,7 @@ def dec_key_cpabe(CT_padded_key_name, cpabe_sk):
     #     padded_aes_key = f.read()
     padded_aes_key = test_aes_key
 
-    end = time.time()
-    rt = end - start
-
-    return padded_aes_key, rt
+    return padded_aes_key
 
 #========================= MAIN ===========================#
 
