@@ -4,6 +4,10 @@ import time
 from charm.toolbox.pairinggroup import PairingGroup, ZR, G1, G2, GT, pair
 from charm.toolbox.symcrypto import SymmetricCryptoAbstraction
 from charm.toolbox.ABEncMultiAuth import ABEncMultiAuth
+from charm.core.math.integer import integer
+from charm.schemes.pkenc.pkenc_elgamal85 import ElGamal
+from charm.toolbox.ecgroup import ECGroup
+from charm.toolbox.eccurve import prime192v2
 import subprocess 
 import time
 import filecmp
@@ -50,9 +54,12 @@ class MJ18(ABEncMultiAuth):
         start = time.time()
 
         # ECC Key Gen
-        ecc_priv_key = self.group.random(ZR)
-        base_point = self.group.random(G1)
-        ecc_pub_key = ecc_priv_key * base_point
+        # Generate key pair
+        groupObj = ECGroup(prime192v2)
+        self.elgamal = ElGamal(groupObj)   
+
+        # Generate key pair
+        (ecc_pub_key, ecc_priv_key) = self.elgamal.keygen()
 
         # AES Key Gen
         key_name = "aes_key_" + str(file_size)
@@ -70,7 +77,7 @@ class MJ18(ABEncMultiAuth):
         end = time.time()
         rt = end - start
 
-        return ecc_priv_key, ecc_pub_key, aes_key, cpabe_pk, cpabe_sk, rt
+        return ecc_pub_key, ecc_priv_key, aes_key, cpabe_pk, cpabe_sk, rt
 
     def encryption(self, EHR, aes_key, pub_key, policy, file_size): # name for output of cpabe enc
         start = time.time()
@@ -87,14 +94,14 @@ class MJ18(ABEncMultiAuth):
         end = time.time()
         rt = end - start
         
-        print(f'''
-            ========================================================
-            Time that use for ENCRYPT --- {file_size} file --- is 
+        # print(f'''
+        #     ========================================================
+        #     Time that use for ENCRYPT --- {file_size} file --- is 
             
-            TOTAL ENC TIME    =>  {rt} secs
-            ENC FILE TIME     =>  {enc_file_time} secs
-            ENC AES KEY TIME  =>  {enc_aes_key_time} secs
-            --------------------------------------------------------''')
+        #     TOTAL ENC TIME    =>  {rt} secs
+        #     ENC FILE TIME     =>  {enc_file_time} secs
+        #     ENC AES KEY TIME  =>  {enc_aes_key_time} secs
+        #     --------------------------------------------------------''')
         
         # TODO: remove test
         global test_aes_key
@@ -119,43 +126,115 @@ class MJ18(ABEncMultiAuth):
 
         return EHR, rt
     
-    def reencryption(self):
+    def generate_authToken(self):
         start = time.time()
+
+        # TODO: implement 
 
         end = time.time()
         rt = end - start
 
         return rt
     
-    def decryption2(self):
+    def verify_authToken(self):
         start = time.time()
+
+        # TODO: implement 
 
         end = time.time()
         rt = end - start
 
         return rt
     
-def enc_file_aes(EHR, key):
+    def reencryption(self, CT_padded_key_name, ecc_pub_key):
+        start = time.time()
+
+        # CP-ABE Decryption
+        PG_cpabe_sk = "secret key of proxy gateway"
+        padded_aes_key, dec_aes_key_time = dec_key_cpabe(CT_padded_key_name, PG_cpabe_sk)
+
+        # ECC Re-encryption
+        k = os.urandom(20)
+        enc_k = self.elgamal.encrypt(ecc_pub_key, k)
+        RE_padded_aes_key, enc_time = enc_file_aes(padded_aes_key, k)
+
+        print(f'\n >> RE-ENC << ')
+        # print(f'padded_aes_key: {padded_aes_key}')
+        print(f'k: {k} / {type(k)}')
+        print(f'Length of padded_aes_key: {len(padded_aes_key)}')
+        # print(f'RE_padded_aes_key: {RE_padded_aes_key}')
+        print(f'Length of RE_padded_aes_key: {len(RE_padded_aes_key)}')
+        # print(f'ecc_pub_key: {ecc_pub_key}')
+
+        padded_aes_key, dec_time = dec_file_aes(RE_padded_aes_key, k)
+        print(f'padded_aes_key: {padded_aes_key}')
+
+        end = time.time()
+        rt = end - start
+
+        return RE_padded_aes_key, enc_k, rt
+    
+    def decryption2(self, CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key):
+        start = time.time()
+
+        # Step 1: decrypt padded AES KEY with ECC private key
+        k = self.elgamal.decrypt(ecc_pub_key, ecc_priv_key, enc_k)
+        print(f'k: {k} / {type(k)}')
+        padded_aes_key, dec_time = dec_file_aes(RE_padded_aes_key, k)
+
+        # Step 2: Unpad AES KEY and decrypt file with unpadded AES KEY
+        aes_key = unpad_aes_key(padded_aes_key, self.start_pad_size, self.end_pad_size)
+
+        print(f'\n >> DEC 2 << ')
+        # print(f'RE_padded_aes_key: {RE_padded_aes_key}')
+        print(f'Length of RE_padded_aes_key: {len(RE_padded_aes_key)}')
+        # print(f'padded_aes_key: {padded_aes_key}')
+        print(f'Length of padded_aes_key: {len(padded_aes_key)}')
+        print(f'aes_key: {aes_key}')
+        # print(f'ecc_pub_key: {ecc_pub_key}')
+        # print(f'ecc_priv_key: {ecc_priv_key}')
+
+        # Step 3: decrypt CT EHR using AES key
+        EHR, dec_file_time = dec_file_aes(CT_EHR, aes_key)
+
+        end = time.time()
+        rt = end - start
+
+        return EHR, rt
+    
+def bytes_to_integer_element(byte_data):
+    int_value = int.from_bytes(byte_data, byteorder='big', signed=False)
+    original_length = len(byte_data)
+    int_with_size = (int_value << (original_length.bit_length() + 7)) | original_length
+    return integer(int_with_size)
+
+def integer_element_to_bytes(int_elem):
+    int_value = int(int_elem)
+    original_length = int_value & ((1 << 8) - 1)
+    hed_int = int_value >> (original_length.bit_length() + 7)
+    return hed_int.to_bytes(original_length, byteorder='big', signed=False)
+
+def enc_file_aes(m, key):
     start = time.time()
 
     symmetric_key = SymmetricCryptoAbstraction(key)
-    CT = symmetric_key.encrypt(EHR)
+    CT = symmetric_key.encrypt(m)
     
     end = time.time()
     rt = end - start
 
     return CT, rt
 
-def dec_file_aes(CT_EHR, key):
+def dec_file_aes(CT, key):
     start = time.time()
 
     symmetric_key = SymmetricCryptoAbstraction(key)
-    EHR = symmetric_key.decrypt(CT_EHR)
+    m = symmetric_key.decrypt(CT)
     
     end = time.time()
     rt = end - start
 
-    return EHR, rt
+    return m, rt
 
 def pad_aes_key(aes_key, start_pad_size, end_pad_size):
     start_padding = os.urandom(start_pad_size)  
@@ -198,7 +277,7 @@ def dec_key_cpabe(CT_padded_key_name, cpabe_sk):
 
     # CPABE & PK path
     cpabe_dec = os.path.join(CPABE_PATH, 'cpabe-dec')
-    SECRET_KEY_PATH = os.path.join(KEY_PATH, cpabe_sk) 
+    SECREcT_KEY_PATH = os.path.join(KEY_PATH, cpabe_sk) 
 
     # Input path (CT_padded_key)
     input_path = os.path.join(KEY_PATH, CT_padded_key_name)
@@ -258,7 +337,7 @@ def main():
                 set_time = ssxehr.setup()
 
                 # 2. Key Generation
-                ecc_priv_key, ecc_pub_key, aes_key, cpabe_pk, cpabe_sk, key_time = ssxehr.keygen(file_size)
+                ecc_pub_key, ecc_priv_key, aes_key, cpabe_pk, cpabe_sk, key_time = ssxehr.keygen(file_size)
 
                 # 3. Encryption
                 policy = "((A and B) or (C and D)) and E"
@@ -267,22 +346,36 @@ def main():
                 # 4. Decryption 1
                 EHR_output1, dec1_time = ssxehr.decryption1(CT_EHR, CT_padded_key_name, cpabe_sk)
 
-                # 5. Re-encryption
-                pre_time = ssxehr.reencryption()
+                # 5. Generate authToken
+                gen_time = ssxehr.generate_authToken()
+
+                # 6. Verify authToken
+                vrf_time = ssxehr.verify_authToken()
+
+                # 7. Re-encryption
+                RE_padded_aes_key, enc_k, pre_time = ssxehr.reencryption(CT_padded_key_name, ecc_pub_key)
                 
-                # 6. Decryption 2
-                dec2_time = ssxehr.decryption2()
+                # 8. Decryption 2
+                EHR_output2, dec2_time = ssxehr.decryption2(CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key)
 
                 # Output file
-                output_file = f'{output_file_dir}output_file_{file_size}_{j}.bin'
-                with open(output_file, 'wb') as f_out:
+                output1_file = f'{output_file_dir}output_file_{file_size}_{j}.bin'
+                with open(output1_file, 'wb') as f_out:
                     f_out.write(EHR_output1)
+                
+                output2_file = f'{output_file_dir}output_file_{file_size}_{j}.bin'
+                with open(output2_file, 'wb') as f_out:
+                    f_out.write(EHR_output2)
 
                 # Compare the original file with the decrypted file
-                if compare_files(input_file, output_file):
-                    print(f'          File decryption ✅✅successful✅✅ file size: {file_size}')
+                if compare_files(input_file, output1_file):
+                    print(f'          File decryption 1 ✅✅successful✅✅ file size: {file_size}')
                 else:
-                    print(f'          File decryption ❌❌failed❌❌ file size: {file_size}')
+                    print(f'          File decryption 1 ❌❌failed❌❌ file size: {file_size}')
+                if compare_files(input_file, output2_file):
+                    print(f'          File decryption 2 ✅✅successful✅✅ file size: {file_size}')
+                else:
+                    print(f'          File decryption 2 ❌❌failed❌❌ file size: {file_size}')
                     
                 # Calculate time
                 set_tot += set_time
