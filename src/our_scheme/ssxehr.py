@@ -36,10 +36,10 @@ class MJ18(ABEncMultiAuth):
         self.g = self.group.random(G1)
         self.alpha = self.group.random(ZR)
         self.beta = self.group.random(ZR)
-        self.h = self.group.exp(self.g, self.beta)
-        self.f = self.group.exp(self.g, 1 / self.beta)
-        self.e_gg_alpha = self.group.pair(self.g, self.g) ** self.alpha
-        self.g_alpha = self.group.exp(self.g, self.alpha)
+        self.h = self.g ** self.beta
+        self.f = self.g ** (1 / self.beta)
+        self.e_gg_alpha = pair(self.g, self.g) ** self.alpha
+        self.g_alpha = self.g ** self.alpha
 
         end = time.time()
         rt = end - start
@@ -55,7 +55,7 @@ class MJ18(ABEncMultiAuth):
         ecc_pub_key = ecc_priv_key * base_point
 
         # AES Key Gen
-        key_name = "aes_key_" + file_size
+        key_name = "aes_key_" + str(file_size)
         AES_KEY_PATH = os.path.join(KEY_PATH, key_name)
         aes_key = os.urandom(self.aes_key_size)
 
@@ -96,6 +96,10 @@ class MJ18(ABEncMultiAuth):
             ENC AES KEY TIME  =>  {enc_aes_key_time} secs
             --------------------------------------------------------''')
         
+        # TODO: remove test
+        global test_aes_key
+        test_aes_key = padded_key
+
         return CT_EHR, CT_padded_key_name, rt
 
     def decryption1(self, CT_EHR, CT_padded_key_name, cpabe_sk):
@@ -105,7 +109,9 @@ class MJ18(ABEncMultiAuth):
         padded_aes_key, dec_aes_key_time = dec_key_cpabe(CT_padded_key_name, cpabe_sk)
 
         # Step 2: Unpad AES KEY and decrypt file with unpadded AES KEY
-        aes_key = unpad_aes_key(padded_aes_key)
+        aes_key = unpad_aes_key(padded_aes_key, self.start_pad_size, self.end_pad_size)
+
+        # Step 3: decrypt CT EHR using AES key
         EHR, dec_file_time = dec_file_aes(CT_EHR, aes_key)
 
         end = time.time()
@@ -172,11 +178,12 @@ def enc_key_cpabe(padded_key, policy, file_size, cpabe_pk):
     
     # Use the CP-ABE Docker image to encrypt the key
     cpabe_enc = os.path.join(CPABE_PATH,'cpabe-enc')
-    CT_padded_key_name = "enc_padded_aes_key_" + file_size
+    CT_padded_key_name = "enc_padded_aes_key_" + str(file_size)
     output_path = os.path.join(KEY_PATH, CT_padded_key_name)
 
+    # TODO: remove test
     # Perform CP-ABE encryption
-    subprocess.run([cpabe_enc, '-k', cpabe_pk, 'temp_padded_key.bin', policy, '-o', output_path], check=True)
+    # subprocess.run([cpabe_enc, '-k', cpabe_pk, 'temp_padded_key.bin', policy, '-o', output_path], check=True)
     
     # Clean up the temporary file
     os.remove('temp_padded_key.bin')
@@ -199,15 +206,17 @@ def dec_key_cpabe(CT_padded_key_name, cpabe_sk):
     # Output path (padded_key)
     prefix = "enc_padded_aes_key_"
     file_size = CT_padded_key_name[len(prefix):]
-    padded_key_name = "dec_padded_aes_key_" + file_size
+    padded_key_name = "dec_padded_aes_key_" + str(file_size)
     output_path = os.path.join(KEY_PATH, padded_key_name)
 
+    # TODO: remove test
     # Perform CP-ABE decryption
-    subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, SECRET_KEY_PATH, input_path, "-o", output_path])
+    # subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, SECRET_KEY_PATH, input_path, "-o", output_path])
     
     # Read the padded_key to return
-    with open(padded_key_name, 'rb') as f:
-        padded_aes_key = f.read()
+    # with open(padded_key_name, 'rb') as f:
+    #     padded_aes_key = f.read()
+    padded_aes_key = test_aes_key
 
     end = time.time()
     rt = end - start
@@ -225,7 +234,7 @@ def main():
     seq = 5
     input_file_dir = '../sample/input/'
     output_file_dir = '../sample/output/'
-    output_txt = './our.txt'
+    output_txt = './ssxehr.txt'
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
         f.write('{:7} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
@@ -241,7 +250,7 @@ def main():
                 file_size = file_sizes[i]
                 print(f'\nFile size: {file_size} bytes, seq: {j}')
 
-                input_file = f'{input_file_dir}input_file_{file_size}_{j}.bin'
+                input_file = f'{input_file_dir}input_file_{file_size}.bin'
                 with open(input_file, 'rb') as f_in:
                     EHR = f_in.read()
 
