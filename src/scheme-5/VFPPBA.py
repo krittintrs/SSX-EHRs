@@ -5,6 +5,7 @@
 # H1: GT -> {0,1}^2l    H.hashToZn(equ1)
 # H2: {0,1} -> Zp       H.hashToZr(psi)  eg. H2(psi)         z = group.hash((m, k), ZR)
 """
+import filecmp
 import random
 
 from charm.toolbox.pairinggroup import PairingGroup, ZR, G1, G2, GT, pair
@@ -13,6 +14,7 @@ import time
 import numpy as np
 from charm.toolbox.hash_module import Hash
 from charm.core.math.integer import integer, int2Bytes
+from charm.toolbox.conversion import Conversion
 from sympy import *
 import sys
 sys.path.append('../')
@@ -224,9 +226,6 @@ class MJ18(ABEncMultiAuth):
         mnum = c0m ^ H.hashToZn(A1 ** (1 / H2psi))
         knum = c0k ^ H.hashToZn(A1 ** (1 / H2psi))
 
-        m = int2Bytes(mnum)
-        k = int2Bytes(knum)
-
         c = ct['c']
         test = (sigma ** H.hashToZr(mnum)) * (mu ** H.hashToZr(knum))
         if (c / test == ele1):
@@ -376,11 +375,8 @@ def register_function(n, msk):
 
 
 def generate_random_str(length):
-    random_str = ''
-    base_str = 'helloworlddfafj23i4jri3jirj23idaf2485644f5551jeri23jeri23ji23'
-    for i in range(length):
-        random_str += base_str[random.randint(0, length - 1)]
-    return random_str
+    base_str = string.ascii_letters + string.digits  
+    return ''.join(random.choices(base_str, k=length))
 
 
 def coeffs_function(n, inputarray):
@@ -401,53 +397,95 @@ def coeffs_function(n, inputarray):
         coeffs_value.append(res)
     return coeffs_value, coeffs_array
 
+def compare_files(file1, file2):
+    return filecmp.cmp(file1, file2, shallow=False)
 
 def main():
     groupObj = PairingGroup('SS512')
-    n_array = np.arange(5, 30, 5)
+    string_length = [50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
+    seq = 5
     output_txt = './VFPPBA.txt'
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
-        f.write('{:3} {:18} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
-            'Seq', 'SetupAveTime', 'RegisterAveTime', 'EncAveTime', 'Dec1AveTime', 'AuthorizeAveTime', 'TransformAveTime', 'Dec2AveTime'
+        f.write('{:7} {:18} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
+            'Size', 'SetupAveTime', 'RegAveTime', 'EncAveTime', 'Dec1AveTime', 'AuthAveTime', 'TransformAveTime', 'Dec2AveTime'
         ))
 
-        for i in range(len(n_array)):
-            ahnipe = MJ18(groupObj)
-            seq = 5
-            sttot, retot, enctot, dec1tot, autot, trtot, dec2tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        for i in range(len(string_length)):
+            vfppba = MJ18(groupObj)
+            set_tot, reg_tot, enc_tot, dec1_tot, auth_tot, trf_tot, dec2_tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+
             for j in range(seq):
-                n = n_array[i]
-                rm = generate_random_str(n)
+                str_len = string_length[i]
+                print(f'\nString length: {str_len} char, seq: {j}')
+
+                n = 32
+                rm = generate_random_str(str_len)
                 rk = generate_random_str(n)
-                pp, msk, setuptime = ahnipe.setup_vfippre(n)
-                sk, sk1, x, x1, registertime = ahnipe.register_vfippre(n, msk)
-                ct, m, k, enctime = ahnipe.enc_vfippre(n, x, rm, rk, pp)
-                atyw, authorizetime = ahnipe.authorize_vfippre(n, x1, pp, sk, ct)
-                ctxw, transformtime = ahnipe.transform_vfippre(ct, atyw)
+                
+                # 0. Setup phase
+                pp, msk, set_time = vfppba.setup_vfippre(n)
+                
+                # 1. Register phase
+                sk, sk1, x, x1, reg_time = vfppba.register_vfippre(n, msk)
+                
+                # 2. Encryption phase
+                ct, m, k, enc_time = vfppba.enc_vfippre(n, x, rm, rk, pp)
+                
+                # 3. Authorization phase
+                atyw, auth_time = vfppba.authorize_vfippre(n, x1, pp, sk, ct)
+                
+                # 4. Transformation phase
+                ctxw, trf_time = vfppba.transform_vfippre(ct, atyw)
 
-                M_output_1, dec1time = ahnipe.dec1_function(n, sk, ct)
-                M_output_2, k, dec2time = ahnipe.dec2_function(n, sk1, ct, ctxw)
+                # 5. Decryption 1 phase
+                M_output_1, dec1_time = vfppba.dec1_function(n, sk, ct)
 
-                print("\nn, seq ", n, j)
-                print("M_input:    ", m)
-                print("M_output_1: ", M_output_1)
-                print("M_output_2: ", M_output_2)
-                # encrypt(m)
-                # decrypt(M_output_1)
+                # 6. Decryption 2 phase
+                M_output_2, k, dec2_time = vfppba.dec2_function(n, sk1, ct, ctxw)
 
-                sttot, retot, enctot, dec1tot, autot, trtot, dec2tot = sttot + setuptime, retot + registertime, enctot + enctime, dec1tot + dec1time, autot + authorizetime, trtot + transformtime, dec2tot + dec2time
-                print("sttot:", sttot)
+                # Compare the original string and output string
+                if rm == M_output_1:
+                    print(f'Decryption 1 successful for string length: {str_len} char, seq: {j}')
+                else:
+                    print(f'Decryption 1 failed for string length: {str_len} char, seq: {j}')
 
-            out0 = str(n).zfill(2)
-            out1 = str(format(sttot / float(seq), '.16f'))
-            out2 = str(format(retot / float(seq), '.16f'))
-            out3 = str(format(enctot / float(seq), '.16f'))
-            out4 = str(format(dec1tot / float(seq), '.16f'))
-            out5 = str(format(autot / float(seq), '.16f'))
-            out6 = str(format(trtot / float(seq), '.16f'))
-            out7 = str(format(dec2tot / float(seq), '.16f'))
-            f.write(f'{out0}  {out1} {out2} {out3} {out4} {out5} {out6} {out7}\n')
+                if rm == M_output_2:
+                    print(f'Decryption 2 successful for string length: {str_len} char, seq: {j}')
+                else:
+                    print(f'Decryption 2 failed for string length: {str_len} char, seq: {j}')
 
-if __name__ == "__main__":
+                # Calculate time
+                set_tot += set_time
+                reg_tot += reg_time
+                enc_tot += enc_time
+                dec1_tot += dec1_time
+                auth_tot += auth_time
+                trf_tot += trf_time
+                dec2_tot += dec2_time
+
+                total_time = set_time + reg_time + enc_time + dec1_tot + auth_time + trf_time + dec2_time
+                print('Total time for this run: ', total_time)
+
+            # Write the average times for the current file size
+            avg_setup_time = set_tot / seq
+            avg_register_time = reg_tot / seq
+            avg_encryption_time = enc_tot / seq
+            avg_dec1_time = dec1_tot / seq
+            avg_authorize_time = auth_tot / seq
+            avg_transform_time = trf_tot / seq
+            avg_dec2_time = dec2_tot / seq
+
+            out0 = str(string_length[i]).zfill(7)
+            out1 = str(format(avg_setup_time, '.16f'))
+            out2 = str(format(avg_register_time, '.16f'))
+            out3 = str(format(avg_encryption_time, '.16f'))
+            out4 = str(format(avg_dec1_time, '.16f'))
+            out5 = str(format(avg_authorize_time, '.16f'))
+            out6 = str(format(avg_transform_time, '.16f'))
+            out7 = str(format(avg_dec2_time, '.16f'))
+
+            f.write(f'{out0} {out1} {out2} {out3} {out4} {out5} {out6} {out7}\n')
+
+if __name__ == '__main__':
     main()
