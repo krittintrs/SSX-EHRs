@@ -1,10 +1,9 @@
 import os
 import filecmp
 import time
-from charm.toolbox.pairinggroup import PairingGroup, ZR, G1, G2, GT, pair
+from charm.toolbox.pairinggroup import PairingGroup, ZR, G1, pair
 from charm.toolbox.symcrypto import SymmetricCryptoAbstraction
 from charm.toolbox.ABEncMultiAuth import ABEncMultiAuth
-from charm.core.math.integer import integer
 from charm.schemes.pkenc.pkenc_elgamal85 import ElGamal
 from charm.toolbox.ecgroup import ECGroup
 from charm.toolbox.eccurve import prime192v2
@@ -91,7 +90,6 @@ class MJ18(ABEncMultiAuth):
         end = time.time()
         rt = end - start
 
-
         return CT_EHR, CT_padded_key_name, rt
 
     def decryption1(self, CT_EHR, CT_padded_key_name, cpabe_sk):
@@ -167,18 +165,6 @@ class MJ18(ABEncMultiAuth):
         rt = end - start
 
         return EHR, rt
-    
-def bytes_to_integer_element(byte_data):
-    int_value = int.from_bytes(byte_data, byteorder='big', signed=False)
-    original_length = len(byte_data)
-    int_with_size = (int_value << (original_length.bit_length() + 7)) | original_length
-    return integer(int_with_size)
-
-def integer_element_to_bytes(int_elem):
-    int_value = int(int_elem)
-    original_length = int_value & ((1 << 8) - 1)
-    hed_int = int_value >> (original_length.bit_length() + 7)
-    return hed_int.to_bytes(original_length, byteorder='big', signed=False)
 
 def enc_aes(m, key):
     symmetric_key = SymmetricCryptoAbstraction(key)
