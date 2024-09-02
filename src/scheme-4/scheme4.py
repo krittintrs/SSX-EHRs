@@ -12,7 +12,8 @@ from hashlib import sha256
 class MJ18(ABEncMultiAuth):
     def __init__(self, groupObj, verbose=False):
         ABEncMultiAuth.__init__(self)
-    
+        
+        self.group = groupObj
         self.Serv = 'IIoT service X'
         self.file_on_cloud = {}
 
@@ -20,7 +21,6 @@ class MJ18(ABEncMultiAuth):
         start = time.time()
 
         # Initialize pairing group
-        self.group = PairingGroup('SS512')
         self.H = Hash(self.group)
 
         # H1: {0, 1}* → Z*q

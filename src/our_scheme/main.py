@@ -1,16 +1,9 @@
 import os
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.backends import default_backend
-from charm.toolbox.symcrypto import SymmetricCryptoAbstraction
 import filecmp
-import random
 import time
 from charm.toolbox.pairinggroup import PairingGroup, ZR, G1, G2, GT, pair
-from charm.toolbox.hash_module import Hash
 from charm.toolbox.symcrypto import SymmetricCryptoAbstraction
 from charm.toolbox.ABEncMultiAuth import ABEncMultiAuth
-from charm.core.math.integer import integer
-from hashlib import sha256
 import subprocess 
 import time
 import filecmp
@@ -34,11 +27,20 @@ class MJ18(ABEncMultiAuth):
     def __init__(self, groupObj, verbose=False):
         ABEncMultiAuth.__init__(self)
 
+        self.group = groupObj
         self.start_pad_size = 16     # 128 bits
         self.end_pad_size = 16       # 128 bits
 
     def setup(self):
         start = time.time()
+
+        self.g = self.group.random(G1)
+        self.alpha = self.group.random(ZR)
+        self.beta = self.group.random(ZR)
+        self.h = self.group.exp(self.g, self.beta)
+        self.f = self.group.exp(self.g, 1 / self.beta)
+        self.e_gg_alpha = self.group.pair(self.g, self.g) ** self.alpha
+        self.g_alpha = self.group.exp(self.g, self.alpha)
 
         end = time.time()
         rt = end - start
@@ -48,10 +50,17 @@ class MJ18(ABEncMultiAuth):
     def keygen(self):
         start = time.time()
 
+        # ECC Key Gen
+        priv_key = self.group.random(ZR)
+        base_point = self.group.random(G1)
+        pub_key = priv_key * base_point
+
+        # AES Key Gen
+
         end = time.time()
         rt = end - start
 
-        return rt
+        return priv_key, pub_key, aes_key, rt
 
     def encryption(self, EHR, aes_key, pub_key, policy, name): # name for output of cpabe enc
         start = time.time()
@@ -110,6 +119,16 @@ class MJ18(ABEncMultiAuth):
         rt = end - start
 
         return rt
+    
+def generate_aes_key(name):
+    key_name = "aes_key_" + name
+    AES_KEY_PATH = os.path.join(KEY_PATH,key_name)
+    aes_key = os.urandom(AES_KEY_SIZE)
+
+    with open(AES_KEY_PATH, 'wb') as f:
+        f.write(aes_key)
+
+    return aes_key
 
 def enc_file_aes(plaintext, key):
     start = time.time()
@@ -126,35 +145,6 @@ def enc_file_aes(plaintext, key):
 
     return CT, rt
 
-def pad_aes_key(key, start_pad_size, end_pad_size):
-    start_padding = os.urandom(start_pad_size)  # Generate random 128-bit (16 bytes) padding for the start
-    end_padding = os.urandom(end_pad_size)      # Generate random 128-bit (16 bytes) padding for the end
-    
-    padded_key = start_padding + key + end_padding
-    return padded_key
-
-def enc_key_cpabe(padded_key, policy, name, pub_key):
-    start = time.time()
-
-    # Write the padded key to a temporary file
-    with open('temp_padded_key.bin', 'wb') as f:
-        f.write(padded_key)
-    
-    # Use the CP-ABE Docker image to encrypt the key
-    cpabe_enc = os.path.join(CPABE_PATH,'cpabe-enc')
-    CT_padded_key_name = "enc_padded_aes_key_" + name
-    output_path = os.path.join(KEY_PATH, CT_padded_key_name)
-
-    subprocess.run([cpabe_enc, '-k', pub_key, 'temp_padded_key.bin', policy, '-o', output_path], check=True)
-    
-    # Clean up the temporary file
-    os.remove('temp_padded_key.bin')
-
-    end = time.time()
-    rt = end - start
-
-    return CT_padded_key_name, rt
-
 def dec_file_aes(CT_EHR, key):
     start = time.time()
 
@@ -169,11 +159,41 @@ def dec_file_aes(CT_EHR, key):
     rt = end - start
 
     return EHR, rt
+
+def pad_aes_key(key, start_pad_size, end_pad_size):
+    start_padding = os.urandom(start_pad_size)  
+    end_padding = os.urandom(end_pad_size)      
     
+    padded_key = start_padding + key + end_padding
+    return padded_key
+
 def unpad_aes_key(padded_aes_key, start_pad_size, end_pad_size):
     unpadded_aes_key = padded_aes_key[start_pad_size : -end_pad_size]
 
     return unpadded_aes_key
+
+def enc_key_cpabe(padded_key, policy, name, pub_key):
+    start = time.time()
+
+    # Write the padded key to a temporary file
+    with open('temp_padded_key.bin', 'wb') as f:
+        f.write(padded_key)
+    
+    # Use the CP-ABE Docker image to encrypt the key
+    cpabe_enc = os.path.join(CPABE_PATH,'cpabe-enc')
+    CT_padded_key_name = "enc_padded_aes_key_" + name
+    output_path = os.path.join(KEY_PATH, CT_padded_key_name)
+
+    # Perform CP-ABE encryption
+    subprocess.run([cpabe_enc, '-k', pub_key, 'temp_padded_key.bin', policy, '-o', output_path], check=True)
+    
+    # Clean up the temporary file
+    os.remove('temp_padded_key.bin')
+
+    end = time.time()
+    rt = end - start
+
+    return CT_padded_key_name, rt
 
 def dec_key_cpabe(CT_padded_key_name, priv_key):
     start = time.time()
@@ -187,15 +207,15 @@ def dec_key_cpabe(CT_padded_key_name, priv_key):
 
     # Output path (padded_key)
     prefix = "enc_padded_aes_key_"
-    padded_key_name = "dec_padded_aes_key_" + CT_padded_key_name[len(prefix):]
+    name = CT_padded_key_name[len(prefix):]
+    padded_key_name = "dec_padded_aes_key_" + name
     output_path = os.path.join(KEY_PATH, padded_key_name)
 
-    # Perform CP-ABE
+    # Perform CP-ABE decryption
     subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, PRIV_KEY_PATH, input_path, "-o", output_path])
     
     # Read the padded_key to return
-    padded_aes_key_path = output_path
-    with open(output_path, 'rb') as f:
+    with open(padded_key_name, 'rb') as f:
         padded_aes_key = f.read()
 
     end = time.time()
@@ -203,27 +223,10 @@ def dec_key_cpabe(CT_padded_key_name, priv_key):
 
     return padded_aes_key, rt
 
-#=========================Utilize===========================#
-
-def generate_aes_key(name):
-    key_name = "aes_key_" + name
-    AES_KEY_PATH = os.path.join(KEY_PATH,key_name)
-    aes_key = os.urandom(AES_KEY_SIZE)
-
-    with open(AES_KEY_PATH, 'wb') as f:
-        f.write(aes_key)
-    
-def use_aes_key(name):
-    key_name = "aes_key_" + name
-    AES_KEY_PATH = os.path.join(KEY_PATH,key_name)
-    with open(AES_KEY_PATH, 'rb') as f:
-        aes_key = f.read()
-    return aes_key
-
 def compare_files(file1, file2):
     return filecmp.cmp(file1, file2, shallow=False)
 
-#=========================Utilize===========================#
+#========================= MAIN ===========================#
 
 def main():
     groupObj = PairingGroup('SS512')
@@ -249,8 +252,8 @@ def main():
 
                 name = str(file_size) + "bytes"
                 policy = "((A and B) or (C and D)) and E"
-                generate_aes_key(name)
-                aes_key = use_aes_key(name)
+                
+                aes_key = generate_aes_key(name)
                 pub_key = PUB_KEY_PATH
 
                 input_file = f'{input_file_dir}input_file_{file_size}_{j}.bin'
