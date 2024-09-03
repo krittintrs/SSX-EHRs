@@ -244,7 +244,7 @@ def main():
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
         f.write('{:7} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
-            'Size', 'EncAveTime', 'AesEncAveTime', 'CpabeAveTime', '??TIME', 'PREAveTime', 'DecAveTime'
+            'Size', 'SetAvgTime', 'KeyGenAvgTime', 'EncAveTime', 'Dec1AveTime', 'PREAveTime', 'Dec2AveTime'
         ))
 
         for i in range(len(file_sizes)):
