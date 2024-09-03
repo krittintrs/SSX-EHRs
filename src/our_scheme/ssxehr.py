@@ -224,7 +224,7 @@ def dec_key_cpabe(CT_padded_key_name, cpabe_sk):
     subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, SECRET_KEY_PATH, input_path, "-o", output_path])
     
     # Read the padded_key to return
-    with open(padded_key_name, 'rb') as f:
+    with open(output_path, 'rb') as f:
         padded_aes_key = f.read()
 
     return padded_aes_key
