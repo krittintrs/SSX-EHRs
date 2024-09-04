@@ -16,7 +16,6 @@ John Bethencourt, Brent Waters (Pairing-based)
 from charm.toolbox.pairinggroup import PairingGroup,ZR,G1,G2,GT,pair
 from charm.toolbox.secretutil import SecretUtil
 from charm.toolbox.ABEnc import ABEnc, Input, Output
-from charm.core.math.integer import integer
 
 # type annotations
 pk_t = { 'g':G1, 'g2':G2, 'h':G1, 'f':G1, 'e_gg_alpha':GT }
@@ -107,63 +106,73 @@ class CPabe_BSW07(ABEnc):
         
         return ct['C_tilde'] / (pair(ct['C'], sk['D']) / A)
 
+import os
+import hashlib
+from charm.toolbox.pairinggroup import PairingGroup
 
-def main():   
-    groupObj = PairingGroup('SS512')
+# Function to hash bytes to generate an AES key
+def hash_to_aes_key(data, key_length=16):
+    hash_bytes = hashlib.sha256(data).digest()  # Hash the input data
+    aes_key = hash_bytes[:key_length]  # Truncate or adjust to the desired AES key length
+    return aes_key
 
-    cpabe = CPabe_BSW07(groupObj)
+def aes_key_to_gt(group, aes_key):
+    aes_key_hash_int = int.from_bytes(aes_key, byteorder='big')  # Convert hash to integer
+    aes_key_gt = group.init(GT, aes_key_hash_int)  # Initialize GT element from integer
+    return aes_key_gt
+
+def gt_to_aes_key(group, aes_key_gt):
+    # Serialize the GT element to bytes
+    print('GT: >>> ', aes_key_gt)
+    aes_key_bytes = group.serialize(aes_key_gt)
+    print("Serialized GT bytes:", aes_key_bytes)
+    
+    # Hash the serialized bytes to derive the AES key
+    aes_key_hash = hashlib.sha256(aes_key_bytes).digest()
+    print("SHA256 Hash:", aes_key_hash)
+    
+    # Truncate or adjust to 16 bytes for AES-128
+    aes_key = aes_key_hash[:16]
+    
+    return aes_key
+
+def main():
+    group = PairingGroup('SS512')
+
+    # Step 1: Generate a random AES key
+    raw_key = os.urandom(32)  # Raw data to hash for the AES key
+    aes_key = hash_to_aes_key(raw_key)  # Convert raw data to AES key
+    print("Original AES Key:", aes_key)
+
+    # Step 2: Encrypt the AES key using CP-ABE
+    cpabe = CPabe_BSW07(group)
     attrs = ['ONE', 'TWO', 'THREE']
     access_policy = '((four or three) and (three or one))'
-    if debug:
-        print("Attributes =>", attrs); print("Policy =>", access_policy)
-
     (pk, mk) = cpabe.setup()
-    
     sk = cpabe.keygen(pk, mk, attrs)
-    print("sk :=>", sk)
 
-    input_file_dir = '../sample/input/'
-    input_file = f'{input_file_dir}input_file_50000.bin'
-    with open(input_file, 'rb') as f_in:
-        file = f_in.read()
+    aes_key_gt = aes_key_to_gt(group, aes_key)
+    print("AES Key as GT Element:", aes_key_gt)
 
-    # print(type(rand_msg))
-    # from hashlib import sha256
-    # rand_msg = sha256(rand_msg)
-    # print(type(rand_msg))
-    # x = b'\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09'
-    # # rand_msg = pair(int(x), GT)
-    # rand_msg = groupObj.random(GT)
+    ct = cpabe.encrypt(pk, aes_key_gt, access_policy)
+    print("Ciphertext (CT):", ct)
 
-    from charm.core.engine.util import objectToBytes, bytesToObject
-    
-    x = b'\x00\x01\x02\x03\x04\x05\x06\x07'
-    rand_msg = group.serialize(x)
-
-    if debug: print("msg =>", rand_msg)
-    ct = cpabe.encrypt(pk, rand_msg, access_policy)
-    if debug: print("\n\nCiphertext...\n")
-    groupObj.debug(ct)
-
+    # Step 3: Decrypt the AES key using CP-ABE
     rec_msg = cpabe.decrypt(pk, sk, ct)
-    if debug: print("\n\nDecrypt...\n")
-    if debug: print("Rec msg =>", rec_msg)
+    print("Decrypted Ciphertext (rec_msg):", rec_msg)
+    
+    # Step 4: Convert the GT element back to the AES key
+    decrypted_aes_key = gt_to_aes_key(group, rec_msg)
+    print("Decrypted AES Key:", decrypted_aes_key)
 
-    assert rand_msg == rec_msg, "FAILED Decryption: message is incorrect"
-    if debug: print("Successful Decryption!!!")
-
-def bytes_to_integer_element(byte_data):
-    int_value = int.from_bytes(byte_data, byteorder='big', signed=False)
-    original_length = len(byte_data)
-    int_with_size = (int_value << (original_length.bit_length() + 7)) | original_length
-    return integer(int_with_size)
-
-def integer_element_to_bytes(int_elem):
-    int_value = int(int_elem)
-    original_length = int_value & ((1 << 8) - 1)
-    hed_int = int_value >> (original_length.bit_length() + 7)
-    return hed_int.to_bytes(original_length, byteorder='big', signed=False)
+    # Ensure the decrypted AES key matches the original AES key
+    print("Original AES Key Length:", (aes_key))
+    print("Decrypted AES Key Length:", (decrypted_aes_key))
+    
+    if aes_key == decrypted_aes_key:
+        print("AES key successfully decrypted and matches the original key!")
+    else:
+        print("Decryption failed: AES keys do not match!")
 
 if __name__ == "__main__":
-    debug = True
     main()
