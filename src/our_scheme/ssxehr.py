@@ -19,10 +19,12 @@ DEC_FILE_PATH = os.path.join(FILE_PATH,'decrypted_file')
 
 KEY_PATH = "./key"
 ENC_KEY_PATH = os.path.join(KEY_PATH, "encrypted_aes_key")
-PUB_KEY_PATH = os.path.join(KEY_PATH, "pub_key")
-MASTER_KEY_PATH = os.path.join(KEY_PATH, "master_key")
+PUB_KEY_PATH = "./pub_key"
+MASTER_KEY_PATH = "./master_key"
 
 CPABE_PATH = './cpabe-0.11'
+
+PG_cpabe_sk = "proxy_sk"
 
 class MJ18(ABEncMultiAuth):
     def __init__(self, groupObj, verbose=False):
@@ -43,6 +45,8 @@ class MJ18(ABEncMultiAuth):
         self.f = self.g ** (1 / self.beta)
         self.e_gg_alpha = pair(self.g, self.g) ** self.alpha
         self.g_alpha = self.g ** self.alpha
+
+        setup_cpabe()
 
         end = time.time()
         rt = end - start
@@ -66,16 +70,22 @@ class MJ18(ABEncMultiAuth):
             f.write(aes_key)
                 
         # CP-ABE Key Gen
-        # TODO: Make it randomly generated
+        # ✅✅✅TODO: Make it randomly generated
+        
         cpabe_pk = PUB_KEY_PATH
-        cpabe_sk = "test_priv"
+        cpabe_sk = "test_sk"
+        test_attr = ["A", "B", "E"]
+        generate_sk_cpabe(cpabe_sk, test_attr)
+        
+        proxy_attr = ["A","B", "C", "D", "E"]
+        generate_sk_cpabe (PG_cpabe_sk,proxy_attr)
 
         end = time.time()
         rt = end - start
 
         return ecc_pub_key, ecc_priv_key, aes_key, cpabe_pk, cpabe_sk, rt
 
-    def encryption(self, EHR, aes_key, pub_key, policy, file_size): # name for output of cpabe enc
+    def encryption(self, EHR, aes_key, pub_key, policy, file_size): # file_size = name for output of cpabe enc
         start = time.time()
 
         # STEP 1: Encrypt the file with AES
@@ -96,7 +106,7 @@ class MJ18(ABEncMultiAuth):
         start = time.time()
 
         # Step 1: decrypt padded AES KEY with cpabe key
-        padded_aes_key = dec_key_cpabe(CT_padded_key_name, cpabe_sk)
+        padded_aes_key = dec_key_cpabe(CT_padded_key_name, cpabe_sk, "dec")
 
         # Step 2: Unpad AES KEY and decrypt file with unpadded AES KEY
         aes_key = unpad_aes_key(padded_aes_key, self.start_pad_size, self.end_pad_size)
@@ -133,9 +143,9 @@ class MJ18(ABEncMultiAuth):
         start = time.time()
 
         # CP-ABE Decryption
-        # TODO: add secret key generation for proxy gateway
-        PG_cpabe_sk = "secret key of proxy gateway"
-        padded_aes_key = dec_key_cpabe(CT_padded_key_name, PG_cpabe_sk)
+        # ✅✅✅ ADD in SET-UP TODO: add secret key generation for proxy gateway
+        
+        padded_aes_key = dec_key_cpabe(CT_padded_key_name, PG_cpabe_sk, "re")
 
         # ECC Re-encryption
         k = os.urandom(20)
@@ -206,7 +216,7 @@ def enc_key_cpabe(padded_key, policy, file_size, cpabe_pk):
 
     return CT_padded_key_name
 
-def dec_key_cpabe(CT_padded_key_name, cpabe_sk):
+def dec_key_cpabe(CT_padded_key_name, cpabe_sk, mode):
     # CPABE & PK path
     cpabe_dec = os.path.join(CPABE_PATH, 'cpabe-dec')
     SECRET_KEY_PATH = os.path.join(KEY_PATH, cpabe_sk) 
@@ -217,17 +227,35 @@ def dec_key_cpabe(CT_padded_key_name, cpabe_sk):
     # Output path (padded_key)
     prefix = "enc_padded_aes_key_"
     file_size = CT_padded_key_name[len(prefix):]
-    padded_key_name = "dec_padded_aes_key_" + str(file_size)
+    if mode == "dec":
+        padded_key_name = "dec_padded_aes_key_" + str(file_size)
+    elif mode == "re":
+        padded_key_name = "dec_re_padded_aes_key_" + str(file_size)
     output_path = os.path.join(KEY_PATH, padded_key_name)
 
     # Perform CP-ABE decryption
     subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, SECRET_KEY_PATH, input_path, "-o", output_path])
     
     # Read the padded_key to return
-    with open(output_path, 'rb') as f:
-        padded_aes_key = f.read()
+    try:
+        with open(output_path, 'rb') as f:
+            padded_aes_key = f.read()
+    except:
+        print('''
+              🚨🚨🚨🚨🚨🚨🚨🚨🚨
+               ⛔⛔⛔ERROR⛔⛔⛔
+              🚨🚨🚨🚨🚨🚨🚨🚨🚨''')
 
     return padded_aes_key
+
+def setup_cpabe():
+    cpabe_setup_path = os.path.join(CPABE_PATH, 'cpabe-setup')
+    subprocess.run([cpabe_setup_path], check=True)
+
+def generate_sk_cpabe(sk_name, proxy_attr):
+    sk_path = os.path.join(KEY_PATH, sk_name)
+    cpabe_keygen_path = os.path.join(CPABE_PATH, 'cpabe-keygen')
+    subprocess.run([cpabe_keygen_path, '-o', sk_path, PUB_KEY_PATH, MASTER_KEY_PATH] + proxy_attr, check=True)
 
 #========================= MAIN ===========================#
 
@@ -286,11 +314,11 @@ def main():
                 EHR_output2, dec2_time = ssxehr.decryption2(CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key)
 
                 # Output file
-                output1_file = f'{output_file_dir}output_file_{file_size}_{j}.bin'
+                output1_file = f'{output_file_dir}output_file1_{file_size}_{j}.bin'
                 with open(output1_file, 'wb') as f_out:
                     f_out.write(EHR_output1)
                 
-                output2_file = f'{output_file_dir}output_file_{file_size}_{j}.bin'
+                output2_file = f'{output_file_dir}output_file2_{file_size}_{j}.bin'
                 with open(output2_file, 'wb') as f_out:
                     f_out.write(EHR_output2)
 
@@ -332,6 +360,8 @@ def main():
             out6 = str(format(avg_dec2_time, '.16f'))
 
             f.write(f'{out0} {out1} {out2} {out3} {out4} {out5} {out6}\n')
+
+
 
 if __name__ == '__main__':
     main()
