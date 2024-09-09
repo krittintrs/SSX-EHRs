@@ -32,37 +32,50 @@ make install
 
 System Installation
 ```bash
+sudo apt-get update
 sudo apt-get install git tree
 sudo apt-get install zstd flex bison gcc build-essential python3-pip
 sudo apt-get install python3-setuptools python3-dev libssl-dev
 ```
 
-conda setup (can also use virtualenv)
+pyenv setup (can also use virtualenv)
 ```bash
-conda create -n charm python=3.6
-conda activate charm
-conda install -c anaconda pycrypto
-conda install -c menpo opencv  
-conda install -c conda-forge matplotlib
+curl https://pyenv.run | bash
+
+export PATH="$HOME/.pyenv/bin:$PATH"
+eval "$(pyenv init --path)"
+eval "$(pyenv init -)"
+eval "$(pyenv virtualenv-init -)"
+
+exec "$SHELL"
+
+pyenv install 3.6.15
+pyenv virtualenv 3.6.15 charm
+pyenv activate charm
+```
+
+install python packages
+```bash
+pip install pycrypto
+pip install opencv-python-headless
+pip install matplotlib
 pip install pyparsing==2.4.6
 ```
 
 openssl
 ```bash
-conda activate charm
 cd ~/alphabet/charm/
 wget https://www.openssl.org/source/openssl-1.1.1n.tar.gz
 tar -zxvf openssl-1.1.1n.tar.gz
-cd ~/alphabet/charm/openssl-1.1.1n/
+cd openssl-1.1.1n/
 ./config
-make 
+make
 sudo make install
 dpkg -l | grep openssl
 ```
 
 gmp
 ```bash
-conda activate charm
 cd ~/alphabet/charm/
 wget https://gmplib.org/download/gmp/gmp-6.2.1.tar.zst
 tar -I zstd -xvf gmp-6.2.1.tar.zst
@@ -76,7 +89,6 @@ dpkg -l | grep gmp
 
 pbc
 ```bash
-conda activate charm
 cd ~/alphabet/charm/
 wget http://crypto.stanford.edu/pbc/files/pbc-0.5.14.tar.gz
 tar -xvf pbc-0.5.14.tar.gz
@@ -91,37 +103,26 @@ dpkg -l | grep pbc
 charm Installation 
 ```bash
 cd ~/alphabet/charm/
-git clone https://github.com/xuehuan-yang/VFPPBA.git
-git clone https://github.com/xuehuan-yang/PSME.git
-
-cd ~/alphabet/software/
-wget https://repo.anaconda.com/archive/Anaconda3-2021.11-Linux-x86_64.sh
-bash Anaconda3-2021.11-Linux-x86_64.sh 
-(-> ENTER*100times -> yes -> PREFIX=/home/apollo/anaconda3)
-source ~/.bashrc
-```
-
-enable charm in conda
-```bash
-conda activate charm
-cd ~/alphabet/charm/
 git clone https://github.com/JHUISI/charm.git
 cd charm/
 sudo ./configure.sh
-sudo ./configure.sh --python={python_path}
+sudo ./configure.sh --python=$(pyenv which python)
 
 make
 sudo make install
-sudo ldconfig /usr/local/lib64/ 
+sudo ldconfig /usr/local/lib64/
 sudo ldconfig /usr/local/lib/
+```
 
+clean up
+```bash
 cd ~/alphabet/charm/
 rm -rf openssl-1.1.1n.tar.gz
 rm -rf gmp-6.2.1.tar.zst
 rm -rf pbc-0.5.14.tar.gz
 ```
 
-## Python Library
+## Python Library -> No need to use now for Linux
 
 ```bash
 pip install -r requirements.txt
