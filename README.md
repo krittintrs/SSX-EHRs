@@ -37,9 +37,22 @@ sudo apt-get install zstd flex bison gcc build-essential python3-pip
 sudo apt-get install python3-setuptools python3-dev libssl-dev
 ```
 
+charm Installation 
+```bash
+cd ~/alphabet/charm/
+git clone https://github.com/xuehuan-yang/VFPPBA.git
+git clone https://github.com/xuehuan-yang/PSME.git
+
+cd ~/alphabet/software/
+wget https://repo.anaconda.com/archive/Anaconda3-2021.11-Linux-x86_64.sh
+bash Anaconda3-2021.11-Linux-x86_64.sh 
+(-> ENTER*100times -> yes -> PREFIX=/home/apollo/anaconda3)
+source ~/.bashrc
+```
+
 conda setup (can also use virtualenv)
 ```bash
-conda create -n charm python=3.6
+conda create -n charm python=3.10.12
 conda activate charm
 conda install -c anaconda pycrypto
 conda install -c menpo opencv  
@@ -86,19 +99,6 @@ make
 sudo make install
 sudo ldconfig
 dpkg -l | grep pbc
-```
-
-charm Installation 
-```bash
-cd ~/alphabet/charm/
-git clone https://github.com/xuehuan-yang/VFPPBA.git
-git clone https://github.com/xuehuan-yang/PSME.git
-
-cd ~/alphabet/software/
-wget https://repo.anaconda.com/archive/Anaconda3-2021.11-Linux-x86_64.sh
-bash Anaconda3-2021.11-Linux-x86_64.sh 
-(-> ENTER*100times -> yes -> PREFIX=/home/apollo/anaconda3)
-source ~/.bashrc
 ```
 
 enable charm in conda
