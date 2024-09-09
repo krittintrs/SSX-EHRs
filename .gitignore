@@ -5,3 +5,6 @@ src/distributed/key
 # Ignore master_key and pub_key files
 master_key
 pub_key
+
+# Ignore cpabe-0.11
+cpabe-0.11
