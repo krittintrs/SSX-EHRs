@@ -1,5 +1,4 @@
-charm==1.0b4
-common==0.1.2
+Charm-Crypto==0.50
 cryptography==43.0.0
-numpy==2.1.0
+numpy==2.0.1
 sympy==1.13.2
