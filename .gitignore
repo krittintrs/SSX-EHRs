@@ -1,2 +1,6 @@
-# Ignore key file
-key
+# Ignore the key folder in src/our_scheme
+src/our_scheme/key
+
+# Ignore master_key and pub_key files
+master_key
+pub_key
