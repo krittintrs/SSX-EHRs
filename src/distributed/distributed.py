@@ -53,7 +53,7 @@ class MJ18(ABEncMultiAuth):
 
         return rt
 
-    def keygen(self, file_size):
+    def keygen(self, file_size, dup, n):
         start = time.time()
 
         # ECC Key Gen
@@ -62,7 +62,7 @@ class MJ18(ABEncMultiAuth):
         (ecc_pub_key, ecc_priv_key) = self.elgamal.keygen()
 
         # AES Key Gen
-        key_name = "aes_key_" + str(file_size)
+        key_name = "aes_key_" + str(file_size) + "_" + str(dup) + "_" + str(n)
         AES_KEY_PATH = os.path.join(KEY_PATH, key_name)
         aes_key = os.urandom(self.aes_key_size)
 
@@ -85,7 +85,7 @@ class MJ18(ABEncMultiAuth):
 
         return ecc_pub_key, ecc_priv_key, aes_key, cpabe_pk, cpabe_sk, rt
 
-    def encryption(self, EHR, aes_key, pub_key, policy, file_size): # file_size = name for output of cpabe enc
+    def encryption(self, EHR, aes_key, pub_key, policy, file_size, dup, n): # file_size = name for output of cpabe enc
         start = time.time()
 
         # STEP 1: Encrypt the file with AES
@@ -95,18 +95,18 @@ class MJ18(ABEncMultiAuth):
         padded_key = pad_aes_key(aes_key, self.start_pad_size, self.end_pad_size)
 
         # STEP 3: Encrypt the padded AES key with CP-ABE
-        CT_padded_key_name = enc_key_cpabe(padded_key, policy, file_size, pub_key)
+        CT_padded_key_name = enc_key_cpabe(padded_key, policy, file_size, pub_key, dup, n)
         
         end = time.time()
         rt = end - start
 
         return CT_EHR, CT_padded_key_name, rt
 
-    def decryption1(self, CT_EHR, CT_padded_key_name, cpabe_sk):
+    def decryption1(self, CT_EHR, CT_padded_key_name, cpabe_sk, dup, n):
         start = time.time()
 
         # Step 1: decrypt padded AES KEY with cpabe key
-        padded_aes_key = dec_key_cpabe(CT_padded_key_name, cpabe_sk, "dec")
+        padded_aes_key = dec_key_cpabe(CT_padded_key_name, cpabe_sk, "dec", dup, n)
 
         # Step 2: Unpad AES KEY and decrypt file with unpadded AES KEY
         aes_key = unpad_aes_key(padded_aes_key, self.start_pad_size, self.end_pad_size)
@@ -211,14 +211,14 @@ def unpad_aes_key(padded_aes_key, start_pad_size, end_pad_size):
 
     return aes_key
 
-def enc_key_cpabe(padded_key, policy, file_size, cpabe_pk):
+def enc_key_cpabe(padded_key, policy, file_size, cpabe_pk, dub, n):
     # Write the padded key to a temporary file
     with open('temp_padded_key.bin', 'wb') as f:
         f.write(padded_key)
     
     # Use the CP-ABE Docker image to encrypt the key
     cpabe_enc = os.path.join(CPABE_PATH,'cpabe-enc')
-    CT_padded_key_name = "enc_padded_aes_key_" + str(file_size)
+    CT_padded_key_name = "enc_padded_aes_key_" + str(file_size) + "_" + str(dub) + "_" + str(n)
     output_path = os.path.join(KEY_PATH, CT_padded_key_name)
 
     # Perform CP-ABE encryption
@@ -229,7 +229,7 @@ def enc_key_cpabe(padded_key, policy, file_size, cpabe_pk):
 
     return CT_padded_key_name
 
-def dec_key_cpabe(CT_padded_key_name, cpabe_sk, mode):
+def dec_key_cpabe(CT_padded_key_name, cpabe_sk, mode, dup, n):
     # CPABE & PK path
     cpabe_dec = os.path.join(CPABE_PATH, 'cpabe-dec')
     SECRET_KEY_PATH = os.path.join(KEY_PATH, cpabe_sk) 
@@ -241,9 +241,9 @@ def dec_key_cpabe(CT_padded_key_name, cpabe_sk, mode):
     prefix = "enc_padded_aes_key_"
     file_size = CT_padded_key_name[len(prefix):]
     if mode == "dec":
-        padded_key_name = "dec_padded_aes_key_" + str(file_size)
+        padded_key_name = "dec_padded_aes_key_" + str(file_size) + "_" + str(dup) + "_" + str(n)
     elif mode == "re":
-        padded_key_name = "dec_re_padded_aes_key_" + str(file_size)
+        padded_key_name = "dec_re_padded_aes_key_" + str(file_size) + "_" + str(dup) + "_" + str(n)
     output_path = os.path.join(KEY_PATH, padded_key_name)
 
     # Perform CP-ABE decryption
@@ -324,6 +324,7 @@ def main():
                 print(f'\nFile size: {file_size} bytes, seq: {round + 1}, duplicate: {duplicate[dup]}')
                 
                 # prepare the decrypted file
+                
                 for n in range(duplicate[dup]):
 
                     input_file = f'{input_file_dir}input_file_{file_size}_{n}.bin'
@@ -334,51 +335,35 @@ def main():
                     set_time = ssxehr.setup()
 
                     # 2. Key Generation
-                    ecc_pub_key, ecc_priv_key, aes_key, cpabe_pk, cpabe_sk, key_time = ssxehr.keygen(file_size)
+                    ecc_pub_key, ecc_priv_key, aes_key, cpabe_pk, cpabe_sk, key_time = ssxehr.keygen(file_size, dup, n)
 
                     # 3. Encryption
                     policy = "((A and B) or (C and D)) and E"
-                    CT_EHR, CT_padded_key_name, enc_time = ssxehr.encryption(EHR, aes_key, cpabe_pk, policy, file_size)
-
-                    # 4. Decryption 1
-                    EHR_output1, dec1_time = ssxehr.decryption1(CT_EHR, CT_padded_key_name, cpabe_sk)
-
-                    # 5. Generate authToken
-                    gen_time = ssxehr.generate_authToken()
-
-                    # 6. Verify authToken
-                    vrf_time = ssxehr.verify_authToken()
+                    CT_EHR, CT_padded_key_name, enc_time = ssxehr.encryption(EHR, aes_key, cpabe_pk, policy, file_size, dup, n)
                     
                 # 7.1 Re-encryption parallel
-                RE_padded_aes_key, enc_k, parallellpre_time = ssxehr.parallel_reencryption(CT_padded_key_name, ecc_pub_key, proxy)
+                RE_padded_aes_key, enc_k, parallellpre_time = ssxehr.parallel_reencryption(CT_padded_key_name, ecc_pub_key, duplicate[dup], proxy)
                 
                 # 8. Decryption 2
                 EHR_output2, dec2_time = ssxehr.decryption2(CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key)
 
-                # Output file
-                output1_file = f'{output_file_dir}output_file1_{file_size}_{j}.bin'
-                with open(output1_file, 'wb') as f_out:
-                    f_out.write(EHR_output1)
-                
+                # Output file       
                 output2_file = f'{output_file_dir}output_file2_{file_size}_{j}.bin'
                 with open(output2_file, 'wb') as f_out:
                     f_out.write(EHR_output2)
 
                 # Compare the original file with the decrypted file
-                if compare_files(input_file, output1_file):
-                    print(f'          File decryption 1 ✅✅successful✅✅ file size: {file_size}')
-                else:
-                    print(f'          File decryption 1 ❌❌failed❌❌ file size: {file_size}')
                 if compare_files(input_file, output2_file):
                     print(f'          File decryption 2 ✅✅successful✅✅ file size: {file_size}')
                 else:
                     print(f'          File decryption 2 ❌❌failed❌❌ file size: {file_size}')
                     
                 # Calculate time
-                pre_tot += pre_time
+                # pre_tot += pre_time
                 parallellpre_tot += parallellpre_time
 
-                total_time = pre_time + parallellpre_time
+                # total_time = pre_time + parallellpre_time
+                total_time = parallellpre_time
                 print('Total time for this run: ', total_time)
 
             # Write the average times for the current file size
