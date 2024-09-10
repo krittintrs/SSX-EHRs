@@ -10,6 +10,7 @@ from charm.toolbox.eccurve import prime192v2
 import subprocess 
 import time
 import filecmp
+import multiprocessing
 
 # Constants
 FILE_PATH = './file'
@@ -157,18 +158,72 @@ class MJ18(ABEncMultiAuth):
 
         return RE_padded_aes_key, enc_k, rt
     
-    def parallel_reencryption(self, CT_padded_key_name, ecc_pub_key, proxy):
+    def parallel_reencryption(self, CT_padded_key_name, ecc_pub_key, dup, proxy):
         start = time.time()
         
-        ###
+        # Step 1: Split CT_padded_key_name into chunks if it's a large file or contains multiple entries
+        # Assuming CT_padded_key_name is a list of key file names
+        chunk_size = len(CT_padded_key_name) // proxy  # Adjust chunk size based on proxy count
+        chunks = [CT_padded_key_name[i:i + chunk_size] for i in range(0, len(CT_padded_key_name), chunk_size)]
         
-        
-        ###
-        
-        end = time.time()
-        rt = end - start
+        # Step 2: Set up multiprocessing Manager for sharing results
+        manager = multiprocessing.Manager()
+        return_dict = manager.dict()
+        processes = []
 
-        return rt
+        for proxy_id, chunk in enumerate(chunks):
+            # For each chunk, start a process to handle parallel re-encryption
+            p = multiprocessing.Process(target=self._reencrypt_chunk, args=(chunk, ecc_pub_key, proxy_id, return_dict))
+            processes.append(p)
+            p.start()
+            print(f"Re-encryption task for chunk {proxy_id} started")
+
+        # Step 3: Wait for all processes to complete
+        for p in processes:
+            p.join()
+
+        # Step 4: Aggregate results (if necessary)
+        # This could involve summing times, collecting keys, or any other result needed
+        re_padded_aes_keys = [result['RE_padded_aes_key'] for result in return_dict.values()]
+        enc_ks = [result['enc_k'] for result in return_dict.values()]
+        re_times = [result['reencryption_time'] for result in return_dict.values()]
+
+        end = time.time()
+        total_reencryption_time = end - start
+
+        return re_padded_aes_keys, enc_ks, total_reencryption_time
+
+    def _reencrypt_chunk(self, chunk, ecc_pub_key, proxy_id, return_dict):
+        """
+        Re-encrypts each entry in the chunk and stores the result in the return_dict.
+        """
+        re_padded_aes_keys = []
+        enc_ks = []
+        reencryption_time = 0
+
+        for entry in chunk:
+            start = time.time()
+            # CP-ABE Decryption to get padded AES key
+            padded_aes_key = dec_key_cpabe(entry, PG_cpabe_sk, "re")
+
+            # ECC Re-encryption
+            k = os.urandom(20)
+            enc_k = self.elgamal.encrypt(ecc_pub_key, k)
+            RE_padded_aes_key = enc_aes(padded_aes_key, k)
+
+            end = time.time()
+            reencryption_time += (end - start)
+
+            # Collect the re-encrypted keys for this chunk
+            re_padded_aes_keys.append(RE_padded_aes_key)
+            enc_ks.append(enc_k)
+
+        # Store results in return_dict
+        return_dict[proxy_id] = {
+            'RE_padded_aes_key': re_padded_aes_keys,
+            'enc_k': enc_ks,
+            'reencryption_time': reencryption_time
+        }
     
     def decryption2(self, CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key):
         start = time.time()
@@ -292,7 +347,7 @@ def distributed_test():
 def create_test_files(file_sizes, file_size_select, duplicate):
     for n in range(duplicate):
         size = file_sizes[file_size_select - 1]
-        with open(f'./input_distributed/input_file_{size}_{n}.bin', 'wb') as f:
+        with open(f'../sample/input_distributed/input_file_{size}_{n}.bin', 'wb') as f:
             f.write(os.urandom(size))
         n += 1
     print(f'Create test file with size {size}: done')
@@ -307,7 +362,7 @@ def main():
     output_txt = './ssxehr_parallel.txt'
     
     file_size_select, proxy = distributed_test()
-    create_test_files(file_sizes, file_size_select, duplicate[4])
+    create_test_files(file_sizes, file_size_select, duplicate[1])
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
         f.write('{:7} {:18} {:18}\n'.format(

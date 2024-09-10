@@ -1,1 +1,1 @@
-Size    SetAvgTime         KeyGenAvgTime      EncAveTime         Dec1AveTime        PREAveTime         PREParallelAveTime Dec2AveTime        
+Duplicate PREAveTime         ParallelPREAveTime
