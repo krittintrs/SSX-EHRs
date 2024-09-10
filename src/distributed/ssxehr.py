@@ -157,6 +157,19 @@ class MJ18(ABEncMultiAuth):
 
         return RE_padded_aes_key, enc_k, rt
     
+    def parallel_reencryption(self, CT_padded_key_name, ecc_pub_key, proxy):
+        start = time.time()
+        
+        ###
+        
+        
+        ###
+        
+        end = time.time()
+        rt = end - start
+
+        return rt
+    
     def decryption2(self, CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key):
         start = time.time()
 
@@ -262,53 +275,82 @@ def generate_sk_cpabe(sk_name, proxy_attr):
 def compare_files(file1, file2):
     return filecmp.cmp(file1, file2, shallow=False)
 
+def distributed_test():
+    # Prepare the input file for parralel execution
+    file_size_select = int(input("""Enter the file size
+                          1. 50 KB
+                          2. 100 KB
+                          3. 200 KB
+                          4. 400 KB
+                          5. 800 KB
+                          6. 1.6 MB
+                          :"""))
+    proxy = input("Enter the proxy number: ")
+    
+    return file_size_select, proxy
+
+def create_test_files(file_sizes, file_size_select, duplicate):
+    for n in range(duplicate):
+        size = file_sizes[file_size_select - 1]
+        with open(f'./input_distributed/input_file_{size}_{n}.bin', 'wb') as f:
+            f.write(os.urandom(size))
+        n += 1
+    print(f'Create test file with size {size}: done')
+
 def main():
     groupObj = PairingGroup('SS512')
     file_sizes = [50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
+    duplicate = [10, 100, 1000, 10000, 100000]
     seq = 5
-    input_file_dir = '../sample/input/'
-    output_file_dir = '../sample/output/'
-    output_txt = './ssxehr.txt'
+    input_file_dir = '../sample/input_distributed/'
+    output_file_dir = '../sample/output_distributed/'
+    output_txt = './ssxehr_parallel.txt'
+    
+    file_size_select, proxy = distributed_test()
+    create_test_files(file_sizes, file_size_select, duplicate[4])
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
-        f.write('{:7} {:18} {:18} {:18} {:18} {:18} {:18}\n'.format(
-            'Size', 'SetAvgTime', 'KeyGenAvgTime', 'EncAveTime', 'Dec1AveTime', 'PREAveTime', 'Dec2AveTime'
+        f.write('{:7} {:18} {:18}\n'.format(
+            'Duplicate', 'PREAveTime', 'ParallelPREAveTime'
         ))
 
-        for i in range(len(file_sizes)):
+        for round in range(seq):
             ssxehr = MJ18(groupObj)
-            set_tot, key_tot, enc_tot, dec1_tot, pre_tot, dec2_tot = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+            pre_tot, parallellpre_tot = 0.0, 0.0
 
-            for j in range(seq):
+            for dup in range(len(duplicate)):
                 #---ENCRYPT---#
-                file_size = file_sizes[i]
-                print(f'\nFile size: {file_size} bytes, seq: {j}')
+                file_size = file_sizes[file_size_select - 1]
+                print(f'\nFile size: {file_size} bytes, seq: {round + 1}, duplicate: {duplicate[dup]}')
+                
+                # prepare the decrypted file
+                for n in range(duplicate[dup]):
 
-                input_file = f'{input_file_dir}input_file_{file_size}.bin'
-                with open(input_file, 'rb') as f_in:
-                    EHR = f_in.read()
+                    input_file = f'{input_file_dir}input_file_{file_size}_{n}.bin'
+                    with open(input_file, 'rb') as f_in:
+                        EHR = f_in.read()
 
-                # 1. Setup
-                set_time = ssxehr.setup()
+                    # 1. Setup
+                    set_time = ssxehr.setup()
 
-                # 2. Key Generation
-                ecc_pub_key, ecc_priv_key, aes_key, cpabe_pk, cpabe_sk, key_time = ssxehr.keygen(file_size)
+                    # 2. Key Generation
+                    ecc_pub_key, ecc_priv_key, aes_key, cpabe_pk, cpabe_sk, key_time = ssxehr.keygen(file_size)
 
-                # 3. Encryption
-                policy = "((A and B) or (C and D)) and E"
-                CT_EHR, CT_padded_key_name, enc_time = ssxehr.encryption(EHR, aes_key, cpabe_pk, policy, file_size)
+                    # 3. Encryption
+                    policy = "((A and B) or (C and D)) and E"
+                    CT_EHR, CT_padded_key_name, enc_time = ssxehr.encryption(EHR, aes_key, cpabe_pk, policy, file_size)
 
-                # 4. Decryption 1
-                EHR_output1, dec1_time = ssxehr.decryption1(CT_EHR, CT_padded_key_name, cpabe_sk)
+                    # 4. Decryption 1
+                    EHR_output1, dec1_time = ssxehr.decryption1(CT_EHR, CT_padded_key_name, cpabe_sk)
 
-                # 5. Generate authToken
-                gen_time = ssxehr.generate_authToken()
+                    # 5. Generate authToken
+                    gen_time = ssxehr.generate_authToken()
 
-                # 6. Verify authToken
-                vrf_time = ssxehr.verify_authToken()
-
-                # 7. Re-encryption
-                RE_padded_aes_key, enc_k, pre_time = ssxehr.reencryption(CT_padded_key_name, ecc_pub_key)
+                    # 6. Verify authToken
+                    vrf_time = ssxehr.verify_authToken()
+                    
+                # 7.1 Re-encryption parallel
+                RE_padded_aes_key, enc_k, parallellpre_time = ssxehr.parallel_reencryption(CT_padded_key_name, ecc_pub_key, proxy)
                 
                 # 8. Decryption 2
                 EHR_output2, dec2_time = ssxehr.decryption2(CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key)
@@ -333,33 +375,21 @@ def main():
                     print(f'          File decryption 2 ❌❌failed❌❌ file size: {file_size}')
                     
                 # Calculate time
-                set_tot += set_time
-                key_tot += key_time
-                enc_tot += enc_time
-                dec1_tot += dec1_time
                 pre_tot += pre_time
-                dec2_tot += dec2_time
+                parallellpre_tot += parallellpre_time
 
-                total_time = set_time + key_time + enc_time + dec1_time + pre_time + dec2_time
+                total_time = pre_time + parallellpre_time
                 print('Total time for this run: ', total_time)
 
             # Write the average times for the current file size
-            avg_set_time = set_tot / seq
-            avg_key_time = key_tot / seq
-            avg_enc_time = enc_tot / seq
-            avg_dec1_time = dec1_tot / seq
             avg_pre_time = pre_tot / seq
-            avg_dec2_time = dec2_tot / seq
+            avg_parallellpre_time = parallellpre_tot / seq
 
-            out0 = str(file_sizes[i]).zfill(7)
-            out1 = str(format(avg_set_time, '.16f'))
-            out2 = str(format(avg_key_time, '.16f'))
-            out3 = str(format(avg_enc_time, '.16f'))
-            out4 = str(format(avg_dec1_time, '.16f'))
-            out5 = str(format(avg_pre_time, '.16f'))
-            out6 = str(format(avg_dec2_time, '.16f'))
+            out0 = str(file_size).zfill(7)
+            out1 = str(format(avg_pre_time, '.16f'))
+            out2 = str(format(avg_parallellpre_time, '.16f'))
 
-            f.write(f'{out0} {out1} {out2} {out3} {out4} {out5} {out6}\n')
+            f.write(f'{out0} {out1} {out2}\n')
 
 
 
