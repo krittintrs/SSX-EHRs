@@ -158,40 +158,23 @@ class MJ18(ABEncMultiAuth):
 
         return RE_padded_aes_key, enc_k, rt
     
-    def parallel_reencryption(self, CT_padded_key_name, ecc_pub_key, dup, proxy):
+    def parallel_reencryption(self, CT_padded_key_name_dict, ecc_pub_key, dup, proxy):
         start = time.time()
         
         # Step 1: Split CT_padded_key_name into chunks if it's a large file or contains multiple entries
         # Assuming CT_padded_key_name is a list of key file names
-        chunk_size = len(CT_padded_key_name) // proxy  # Adjust chunk size based on proxy count
-        chunks = [CT_padded_key_name[i:i + chunk_size] for i in range(0, len(CT_padded_key_name), chunk_size)]
         
         # Step 2: Set up multiprocessing Manager for sharing results
-        manager = multiprocessing.Manager()
-        return_dict = manager.dict()
-        processes = []
-
-        for proxy_id, chunk in enumerate(chunks):
-            # For each chunk, start a process to handle parallel re-encryption
-            p = multiprocessing.Process(target=self._reencrypt_chunk, args=(chunk, ecc_pub_key, proxy_id, return_dict))
-            processes.append(p)
-            p.start()
-            print(f"Re-encryption task for chunk {proxy_id} started")
 
         # Step 3: Wait for all processes to complete
-        for p in processes:
-            p.join()
 
         # Step 4: Aggregate results (if necessary)
         # This could involve summing times, collecting keys, or any other result needed
-        re_padded_aes_keys = [result['RE_padded_aes_key'] for result in return_dict.values()]
-        enc_ks = [result['enc_k'] for result in return_dict.values()]
-        re_times = [result['reencryption_time'] for result in return_dict.values()]
 
         end = time.time()
         total_reencryption_time = end - start
 
-        return re_padded_aes_keys, enc_ks, total_reencryption_time
+        return
 
     def _reencrypt_chunk(self, chunk, ecc_pub_key, proxy_id, return_dict):
         """
@@ -362,7 +345,12 @@ def main():
     output_txt = './ssxehr_parallel.txt'
     
     file_size_select, proxy = distributed_test()
-    create_test_files(file_sizes, file_size_select, duplicate[1])
+    create_test_files(file_sizes, file_size_select, duplicate[1])\
+        
+    CT_EHR_dict = []
+    CT_padded_key_name_dict = []
+    ecc_pub_key_dict = []
+    ecc_priv_key_dict = []
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
         f.write('{:7} {:18} {:18}\n'.format(
@@ -391,16 +379,20 @@ def main():
 
                     # 2. Key Generation
                     ecc_pub_key, ecc_priv_key, aes_key, cpabe_pk, cpabe_sk, key_time = ssxehr.keygen(file_size, dup, n)
+                    ecc_pub_key_dict.append({'n': n, 'ecc_pub_key': ecc_pub_key})
+                    ecc_priv_key_dict.append({'n': n, 'ecc_priv_key': ecc_priv_key})
 
                     # 3. Encryption
                     policy = "((A and B) or (C and D)) and E"
                     CT_EHR, CT_padded_key_name, enc_time = ssxehr.encryption(EHR, aes_key, cpabe_pk, policy, file_size, dup, n)
+                    CT_EHR_dict.append({'n': n, 'CT_EHR': CT_EHR})
+                    CT_padded_key_name_dict.append({'n': n, 'CT_padded': CT_padded_key_name})
                     
                 # 7.1 Re-encryption parallel
-                RE_padded_aes_key, enc_k, parallellpre_time = ssxehr.parallel_reencryption(CT_padded_key_name, ecc_pub_key, duplicate[dup], proxy)
+                RE_padded_aes_key_dict, enc_k_dict, parallellpre_time = ssxehr.parallel_reencryption(CT_padded_key_name_dict, ecc_pub_key_dict, duplicate[dup], proxy)
                 
                 # 8. Decryption 2
-                EHR_output2, dec2_time = ssxehr.decryption2(CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key)
+                EHR_output2, dec2_time = ssxehr.decryption2(CT_EHR_dict, RE_padded_aes_key_dict, enc_k_dict, ecc_pub_key_dict, ecc_priv_key_dict)
 
                 # Output file       
                 output2_file = f'{output_file_dir}output_file2_{file_size}_{j}.bin'
