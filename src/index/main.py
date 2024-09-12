@@ -52,13 +52,14 @@ class MerkleTree:
 def concurrent_searches(tree, num_searches):
     """Perform concurrent searches on the Merkle Tree."""
     leaf = "EncEHR500"  # Example search target
-    with ThreadPoolExecutor(max_workers=200) as executor:
+    with ThreadPoolExecutor(max_workers=500) as executor:
         futures = [executor.submit(tree.search, leaf) for _ in range(num_searches)]
-        return sum(f.result() for f in futures)
+        results = [f.result() for f in futures]
+        return sum(results)  # Total number of successful searches
 
-def throughput_test(num_leaves, search_requests, batch_size=100):
+def throughput_test(num_leaves, search_requests, num_seqs=5):
     """Run the throughput test on the Merkle Tree and save results to a file."""
-    print("Creating Merkle Tree with 100k nodes...")
+    print(f"Creating Merkle Tree with {num_leaves} nodes...")
     start_time = time.time()
     
     # Generate leaves
@@ -74,19 +75,26 @@ def throughput_test(num_leaves, search_requests, batch_size=100):
         file.write("request\ttps\n")
         
         for num_requests in search_requests:
-            print(f"\nRunning throughput test with {num_requests} concurrent searches...")
-            start_time = time.time()
-            successful_searches = concurrent_searches(tree, num_requests)
-            duration = time.time() - start_time
-            
-            tps = num_requests / duration
-            file.write(f"{num_requests:4}\t{tps:.2f}\n")
-            print(f"Processed {num_requests} concurrent searches in {duration:.2f} seconds.")
+            total_requests = 0
+            total_duration = 0
+
+            for _ in range(num_seqs):
+                print(f"Running throughput test with {num_requests} concurrent searches...")
+                start_time = time.time()
+                successful_searches = concurrent_searches(tree, num_requests)
+                duration = time.time() - start_time
+                
+                total_requests += num_requests
+                total_duration += duration
+                
+            tps = total_requests / total_duration
+            file.write(f"{num_requests:6}\t{tps:.2f}\n")
+            print(f"Processed {num_requests} concurrent searches ({num_seqs} sequences) in {total_duration:.2f} seconds.")
             print(f"Throughput: {tps:.2f} transactions per second (TPS)")
-            print(f"Successful searches: {successful_searches}/{num_requests}")
+            print(f"Successful searches: {successful_searches}/{num_requests}\n")
 
 if __name__ == "__main__":
-    num_leaves = 100000  # 100k nodes
-    search_requests = [500, 1000, 2000, 4000, 8000]  # Increasing concurrent search requests
+    num_leaves = 1000000  # 100k nodes
+    search_requests = [1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000, 512000]  # Increasing concurrent search requests
     
     throughput_test(num_leaves, search_requests)
