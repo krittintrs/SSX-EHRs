@@ -56,8 +56,8 @@ def concurrent_searches(tree, num_searches):
         futures = [executor.submit(tree.search, leaf) for _ in range(num_searches)]
         return sum(f.result() for f in futures)
 
-def throughput_test(num_leaves, search_requests):
-    """Run the throughput test on the Merkle Tree."""
+def throughput_test(num_leaves, search_requests, batch_size=100):
+    """Run the throughput test on the Merkle Tree and save results to a file."""
     print("Creating Merkle Tree with 100k nodes...")
     start_time = time.time()
     
@@ -69,16 +69,21 @@ def throughput_test(num_leaves, search_requests):
     creation_time = time.time() - start_time
     print(f"Tree created in {creation_time:.2f} seconds.")
     
-    for num_requests in search_requests:
-        print(f"\nRunning throughput test with {num_requests} concurrent searches...")
-        start_time = time.time()
-        successful_searches = concurrent_searches(tree, num_requests)
-        duration = time.time() - start_time
+    # Open a file to write the results
+    with open("index.txt", "w") as file:
+        file.write("request\ttps\n")
         
-        tps = num_requests / duration
-        print(f"Processed {num_requests} concurrent searches in {duration:.2f} seconds.")
-        print(f"Throughput: {tps:.2f} transactions per second (TPS)")
-        print(f"Successful searches: {successful_searches}/{num_requests}")
+        for num_requests in search_requests:
+            print(f"\nRunning throughput test with {num_requests} concurrent searches...")
+            start_time = time.time()
+            successful_searches = concurrent_searches(tree, num_requests)
+            duration = time.time() - start_time
+            
+            tps = num_requests / duration
+            file.write(f"{num_requests:4}\t{tps:.2f}\n")
+            print(f"Processed {num_requests} concurrent searches in {duration:.2f} seconds.")
+            print(f"Throughput: {tps:.2f} transactions per second (TPS)")
+            print(f"Successful searches: {successful_searches}/{num_requests}")
 
 if __name__ == "__main__":
     num_leaves = 100000  # 100k nodes
