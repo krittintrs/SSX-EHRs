@@ -190,6 +190,10 @@ class MJ18(ABEncMultiAuth):
         total_reencryption_time = 0
 
         for i in range(proxy):
+            if i not in return_dict:
+                print(f"Missing result for proxy {i}")
+                continue
+
             result = return_dict[i]
             RE_padded_aes_key_dict.extend(result['RE_padded_aes_key'])
             enc_k_dict.extend(result['enc_k'])
@@ -202,40 +206,61 @@ class MJ18(ABEncMultiAuth):
 
 
     def _reencrypt_chunk(self, chunk, ecc_pub_key_chunk_serializable, proxy_id, return_dict):
-        groupObj = ECGroup(prime192v2)
-        elgamal = ElGamal(groupObj)
+        try:
+            groupObj = ECGroup(prime192v2)
+            elgamal = ElGamal(groupObj)
 
-        re_padded_aes_keys = []
-        enc_ks = []
-        reencryption_time = 0
+            re_padded_aes_keys = []
+            enc_ks = []
+            reencryption_time = 0
 
-        for i, entry in enumerate(chunk):
-            start = time.time()
+            # Ensure chunk and ecc_pub_key_chunk_serializable are of equal size
+            assert len(chunk) == len(ecc_pub_key_chunk_serializable), f"Chunk size mismatch: {len(chunk)} vs {len(ecc_pub_key_chunk_serializable)}"
+            
+            for i, entry in enumerate(chunk):
+                start = time.time()
 
-            dup = entry['dup']
-            n = entry['n']
+                # Access dup and n directly from entry
+                dup = entry['dup']
+                n = entry['n']
 
-            padded_aes_key = dec_key_cpabe(entry['CT_padded'], PG_cpabe_sk, "re", dup, n)
+                # CP-ABE Decryption to get padded AES key
+                padded_aes_key = dec_key_cpabe(entry['CT_padded'], PG_cpabe_sk, "re", dup, n)
 
-            # Convert the serialized ecc_pub_key back to elliptic curve key
-            ecc_pub_key = convert_list_to_key(ecc_pub_key_chunk_serializable[i], groupObj)
+                # Add a debug statement to check the public key chunk
+                if i >= len(ecc_pub_key_chunk_serializable):
+                    print(f"Missing public key for chunk {i}")
+                    continue
+                
+                print(f"Processing chunk {i} with public key: {ecc_pub_key_chunk_serializable[i]}")
+                
+                # Convert the serialized ecc_pub_key back to elliptic curve key
+                ecc_pub_key = convert_list_to_key(ecc_pub_key_chunk_serializable[i], groupObj)
 
-            k = os.urandom(20)
-            enc_k = elgamal.encrypt(ecc_pub_key, k)
-            RE_padded_aes_key = enc_aes(padded_aes_key, k)
+                k = os.urandom(20)
+                enc_k = elgamal.encrypt(ecc_pub_key, k)
+                RE_padded_aes_key = enc_aes(padded_aes_key, k)
 
-            end = time.time()
-            reencryption_time += (end - start)
+                end = time.time()
+                reencryption_time += (end - start)
 
-            re_padded_aes_keys.append(RE_padded_aes_key)
-            enc_ks.append(enc_k)
+                re_padded_aes_keys.append(RE_padded_aes_key)
+                enc_ks.append(enc_k)
 
-        return_dict[proxy_id] = {
-            'RE_padded_aes_key': re_padded_aes_keys,
-            'enc_k': enc_ks,
-            'reencryption_time': reencryption_time
-        }
-    
+            # Store results in return_dict
+            return_dict[proxy_id] = {
+                'RE_padded_aes_key': re_padded_aes_keys,
+                'enc_k': enc_ks,
+                'reencryption_time': reencryption_time
+            }
+        except Exception as e:
+            print(f"Error in _reencrypt_chunk for proxy_id {proxy_id}: {str(e)}")
+            return_dict[proxy_id] = {
+                'RE_padded_aes_key': [],
+                'enc_k': [],
+                'reencryption_time': 0
+            }
+
     def decryption2(self, CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key):
         start = time.time()
 
