@@ -173,6 +173,8 @@ class MJ18(ABEncMultiAuth):
         for i in range(proxy):
             chunk = CT_padded_key_name_dict[i * chunk_size:(i + 1) * chunk_size]
             ecc_pub_key_chunk = ecc_pub_key_dict[i * chunk_size:(i + 1) * chunk_size]
+            print(f'ecc_pub_key_chunk: {type(ecc_pub_key_chunk)}')
+            print(f'chunk: {type(chunk)}')
             
             # Pass groupObj instead of self.elgamal
             p = multiprocessing.Process(target=self._reencrypt_chunk, 
@@ -201,24 +203,27 @@ class MJ18(ABEncMultiAuth):
 
         end = time.time()
         parallellpre_time = end - start
+        
+        #check
+        print(f"RE_padded_aes_key_dict: {RE_padded_aes_key_dict}")
+        print(f"enc_k_dict: {enc_k_dict}")
 
         return RE_padded_aes_key_dict, enc_k_dict, parallellpre_time
 
-
-    def _reencrypt_chunk(self, chunk, ecc_pub_key_chunk_serializable, proxy_id, return_dict):
+    def _reencrypt_chunk(self, chunk, ecc_pub_key_chunk, proxy_id, return_dict):
         try:
             groupObj = ECGroup(prime192v2)
             elgamal = ElGamal(groupObj)
-
+            print(f'groupObj: {type(groupObj)}')
+            print(f'elgamal: {type(elgamal)}')
+            
             re_padded_aes_keys = []
             enc_ks = []
             reencryption_time = 0
-
-            # Ensure chunk and ecc_pub_key_chunk_serializable are of equal size
-            assert len(chunk) == len(ecc_pub_key_chunk_serializable), f"Chunk size mismatch: {len(chunk)} vs {len(ecc_pub_key_chunk_serializable)}"
             
             for i, entry in enumerate(chunk):
                 start = time.time()
+                print(i)
 
                 # Access dup and n directly from entry
                 dup = entry['dup']
@@ -227,15 +232,8 @@ class MJ18(ABEncMultiAuth):
                 # CP-ABE Decryption to get padded AES key
                 padded_aes_key = dec_key_cpabe(entry['CT_padded'], PG_cpabe_sk, "re", dup, n)
 
-                # Add a debug statement to check the public key chunk
-                if i >= len(ecc_pub_key_chunk_serializable):
-                    print(f"Missing public key for chunk {i}")
-                    continue
-                
-                print(f"Processing chunk {i} with public key: {ecc_pub_key_chunk_serializable[i]}")
-                
                 # Convert the serialized ecc_pub_key back to elliptic curve key
-                ecc_pub_key = convert_list_to_key(ecc_pub_key_chunk_serializable[i], groupObj)
+                ecc_pub_key = ecc_pub_key_chunk[i]
 
                 k = os.urandom(20)
                 enc_k = elgamal.encrypt(ecc_pub_key, k)
@@ -247,6 +245,7 @@ class MJ18(ABEncMultiAuth):
                 re_padded_aes_keys.append(RE_padded_aes_key)
                 enc_ks.append(enc_k)
 
+            print(f"Proxy {proxy_id} re-encryption done")
             # Store results in return_dict
             return_dict[proxy_id] = {
                 'RE_padded_aes_key': re_padded_aes_keys,
@@ -410,13 +409,12 @@ def main():
     output_txt = './ssxehr_parallel.txt'
     
     file_size_select, proxy = distributed_test()
-    create_test_files(file_sizes, file_size_select, duplicate[1])\
+    create_test_files(file_sizes, file_size_select, duplicate[1])
         
     CT_EHR_dict = []
     CT_padded_key_name_dict = []
     ecc_pub_key_dict = []
     ecc_priv_key_dict = []
-    # ssxehr_elgamal_dict = []
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
         f.write('{:7} {:18} {:18}\n'.format(
@@ -432,8 +430,7 @@ def main():
                 file_size = file_sizes[file_size_select - 1]
                 print(f'\nFile size: {file_size} bytes, seq: {round + 1}, duplicate: {duplicate[dup]}')
                 
-                # prepare the decrypted file
-                
+                # Prepare the decrypted file
                 for n in range(duplicate[dup]):
 
                     input_file = f'{input_file_dir}input_file_{file_size}_{n}.bin'
@@ -445,29 +442,47 @@ def main():
 
                     # 2. Key Generation
                     ecc_pub_key, ecc_priv_key, aes_key, cpabe_pk, cpabe_sk, key_time = ssxehr.keygen(file_size, dup, n)
-                    ecc_pub_key_dict.append({'n': n, 'ecc_pub_key': ecc_pub_key})
-                    ecc_priv_key_dict.append({'n': n, 'ecc_priv_key': ecc_priv_key})
-                    # ssxehr_elgamal_dict.append({'n': n, 'elgamal': ssxehr.elgamal})
+                    ecc_pub_key_dict.append(ecc_pub_key)
+                    ecc_priv_key_dict.append(ecc_priv_key)
 
                     # 3. Encryption
                     policy = "((A and B) or (C and D)) and E"
                     CT_EHR, CT_padded_key_name, enc_time = ssxehr.encryption(EHR, aes_key, cpabe_pk, policy, file_size, dup, n)
                     CT_EHR_dict.append({'n': n, 'CT_EHR': CT_EHR})
-                    # Inside the loop where encryption happens
                     CT_padded_key_name_dict.append({'n': n, 'dup': dup, 'CT_padded': CT_padded_key_name})
 
-                    
                 # 7.1 Re-encryption parallel
-                print (CT_padded_key_name_dict)
                 RE_padded_aes_key_dict, enc_k_dict, parallellpre_time = ssxehr.parallel_reencryption(CT_padded_key_name_dict, ecc_pub_key_dict, proxy)
                 
                 # 8. Decryption 2
-                EHR_output2, dec2_time = ssxehr.decryption2(CT_EHR_dict, RE_padded_aes_key_dict, enc_k_dict, ecc_pub_key_dict, ecc_priv_key_dict)
+                # Extract necessary information
+                ct_ehr_dict = {entry['n']: entry['CT_EHR'] for entry in CT_EHR_dict}
+                
+                # Perform decryption
+                EHR_output2 = []
+                for n in range(duplicate[dup]):
+                    ct_ehr = ct_ehr_dict[n]
+                    enc_k = [enc_k for enc_k in enc_k_dict if enc_k['n'] == n]
+                    re_padded_aes_key = [key for key in RE_padded_aes_key_dict if key['n'] == n]
+                    priv_key = ecc_priv_key_dict[n]
+                    pub_key = ecc_pub_key_dict[n]
+                    print(f'enc_k: {enc_k}')
+                    print(f're_padded_aes_key: {re_padded_aes_key}')
+                    print(f'priv_key: {priv_key}')
+                    print(f'pub_key: {pub_key}')
+                    test = input('Continue?')
+                    
+                    if enc_k and re_padded_aes_key and priv_key and pub_key:
+                        EHR, dec2_time = ssxehr.decryption2(ct_ehr, re_padded_aes_key[0], enc_k[0], pub_key, priv_key)
+                        EHR_output2.append(EHR)
+                    else:
+                        print(f"Missing data for decryption for file number {n}")
 
                 # Output file       
-                output2_file = f'{output_file_dir}output_file2_{file_size}_{j}.bin'
+                output2_file = f'{output_file_dir}output_file2_{file_size}_{dup}.bin'
                 with open(output2_file, 'wb') as f_out:
-                    f_out.write(EHR_output2)
+                    for ehr in EHR_output2:
+                        f_out.write(ehr)
 
                 # Compare the original file with the decrypted file
                 if compare_files(input_file, output2_file):
@@ -476,10 +491,8 @@ def main():
                     print(f'          File decryption 2 ❌❌failed❌❌ file size: {file_size}')
                     
                 # Calculate time
-                # pre_tot += pre_time
                 parallellpre_tot += parallellpre_time
 
-                # total_time = pre_time + parallellpre_time
                 total_time = parallellpre_time
                 print('Total time for this run: ', total_time)
 
