@@ -102,6 +102,6 @@ def throughput_test(num_leaves, search_requests, num_seqs=5):
 
 if __name__ == "__main__":
     num_leaves = 1000000  # 1M nodes
-    search_requests = [1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000, 512000]  # Increasing concurrent search requests
+    search_requests = [100, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000, 512000]  # Increasing concurrent search requests
     
     throughput_test(num_leaves, search_requests)
