@@ -79,8 +79,8 @@ class MJ18(ABEncMultiAuth):
         is_valid_restriction = (pair_1 == pair_2)
         is_valid_cofactor    = (pair_3 == pair_4)
 
-        print(f"is_valid_restriction: {is_valid_restriction}")
-        print(f"is_valid_cofactor: {is_valid_cofactor}")
+        # print(f"is_valid_restriction: {is_valid_restriction}")
+        # print(f"is_valid_cofactor: {is_valid_cofactor}")
 
         end = time.time()
         rt = end - start
@@ -140,26 +140,44 @@ def verify_polynomial_division(p, t, quotient, remainder, group):
     # Check if product matches p(x)
     return len(p) == len(product) and all(p[i] == product[i] for i in range(len(p)))
 
-def test_zksnark():
+def test_zksnark(num_seqs=5):
     print("Starting zk-SNARK Test...")
     
     group = PairingGroup('SS512')
     d = 5
-
-    authToken = MJ18(group, d)
-
-    # VC = [group.random(ZR) for _ in range(d + 1)]
-    VC = [group.random(ZR) for _ in range(d + 1)]
-
-    PK, VK, setup_time = authToken.setup()
-    pi, proof_time = authToken.prove(PK, VC)
-    verified, verify_time = authToken.verify(VK, pi)
     
-    print(f"Verification result: {verified}")
+    # Open a file to write the results
+    with open("zkp_auth.txt", "w") as file:
+        file.write('{:18} {:18} {:18}\n'.format(
+            'SetupAveTime', 'ProofAveTime', 'VerifyAveTime'
+        ))
+        
+        total_setup_time, total_proof_time, total_verify_time = 0, 0, 0
+            
+        for i in range(num_seqs):
+            zkp_auth = MJ18(group, d)
 
-    print(f'<<< TIME USED >>>')
-    print(f'setup_time: {setup_time}')
-    print(f'proof_time: {proof_time}')
-    print(f'verify_time: {verify_time}')
+            VC = [group.random(ZR) for _ in range(d + 1)]
 
-test_zksnark()
+            PK, VK, setup_time = zkp_auth.setup()
+            pi, proof_time = zkp_auth.prove(PK, VC)
+            verified, verify_time = zkp_auth.verify(VK, pi)
+            
+            print(f"Verification result for seq {i}: {verified}")
+            
+            total_setup_time += setup_time   
+            total_proof_time += proof_time   
+            total_verify_time += verify_time   
+            
+        avg_setup_time = total_setup_time / num_seqs
+        avg_proof_time = total_proof_time / num_seqs
+        avg_verify_time = total_verify_time / num_seqs
+
+        out1 = str(format(avg_setup_time, '.16f'))
+        out2 = str(format(avg_proof_time, '.16f'))
+        out3 = str(format(avg_verify_time, '.16f'))
+
+        file.write(f'{out1} {out2} {out3}\n')
+
+if __name__ == "__main__":
+    test_zksnark()
