@@ -201,11 +201,7 @@ class MJ18(ABEncMultiAuth):
         return RE_padded_aes_key_dict, enc_k_dict, parallellpre_time
 
 
-    def _reencrypt_chunk(self, chunk, ecc_pub_key_chunk, proxy_id, return_dict):
-        """
-        Re-encrypts each entry in the chunk using ECC, and stores the result in return_dict.
-        """
-        # Create ElGamal instance within the subprocess
+    def _reencrypt_chunk(self, chunk, ecc_pub_key_chunk_serializable, proxy_id, return_dict):
         groupObj = ECGroup(prime192v2)
         elgamal = ElGamal(groupObj)
 
@@ -216,26 +212,24 @@ class MJ18(ABEncMultiAuth):
         for i, entry in enumerate(chunk):
             start = time.time()
 
-            # Access dup and n directly from entry
             dup = entry['dup']
             n = entry['n']
 
-            # CP-ABE Decryption to get padded AES key
             padded_aes_key = dec_key_cpabe(entry['CT_padded'], PG_cpabe_sk, "re", dup, n)
 
-            # ECC Re-encryption
+            # Convert the serialized ecc_pub_key back to elliptic curve key
+            ecc_pub_key = convert_list_to_key(ecc_pub_key_chunk_serializable[i], groupObj)
+
             k = os.urandom(20)
-            enc_k = elgamal.encrypt(ecc_pub_key_chunk[i]['ecc_pub_key'], k)
+            enc_k = elgamal.encrypt(ecc_pub_key, k)
             RE_padded_aes_key = enc_aes(padded_aes_key, k)
 
             end = time.time()
             reencryption_time += (end - start)
 
-            # Collect the re-encrypted keys for this chunk
             re_padded_aes_keys.append(RE_padded_aes_key)
             enc_ks.append(enc_k)
 
-        # Store results in return_dict
         return_dict[proxy_id] = {
             'RE_padded_aes_key': re_padded_aes_keys,
             'enc_k': enc_ks,
@@ -342,13 +336,17 @@ def generate_sk_cpabe(sk_name, proxy_attr):
     cpabe_keygen_path = os.path.join(CPABE_PATH, 'cpabe-keygen')
     subprocess.run([cpabe_keygen_path, '-o', sk_path, PUB_KEY_PATH, MASTER_KEY_PATH] + proxy_attr, check=True)
     
-def convert_key_to_list(key):
-    # Convert the elliptic curve key to a list of integers
-    return [int(x) for x in key]
+def convert_list_to_key(key_list, groupObj):
+    # Assuming key_list is [x, y] where x, y are the coordinates of the public key point
+    # Reconstructing the ECC public key using groupObj (this may vary depending on your library)
+    ecc_pub_key = groupObj.init(G1, [key_list[0], key_list[1]])
+    return ecc_pub_key
 
-def convert_list_to_key(key_list):
-    # Convert a list of integers back to the elliptic curve key
-    return SomeEllipticCurveKeyClass(*key_list)  # Adjust according to your class
+def convert_list_to_key(key_list, groupObj):
+    # Assuming key_list is [x, y] where x, y are the coordinates of the public key point
+    # Reconstructing the ECC public key using groupObj (this may vary depending on your library)
+    ecc_pub_key = groupObj.init(G1, [key_list[0], key_list[1]])
+    return ecc_pub_key
 
 #========================= MAIN ===========================#
 
