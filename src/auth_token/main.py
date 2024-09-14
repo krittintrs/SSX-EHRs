@@ -1,7 +1,6 @@
-import numpy as np
+import time
 from charm.toolbox.pairinggroup import PairingGroup, ZR, G1, pair
 from charm.toolbox.ABEncMultiAuth import ABEncMultiAuth
-from charm.core.math.integer import integer
 
 class MJ18(ABEncMultiAuth):
     def __init__(self, groupObj, degree, verbose=False):
@@ -10,6 +9,7 @@ class MJ18(ABEncMultiAuth):
         self.d = degree
 
     def setup(self):
+        start = time.time()
         self.s = self.group.random(ZR)
         self.alpha = self.group.random(ZR)
         self.g = self.group.random(G1)
@@ -25,13 +25,17 @@ class MJ18(ABEncMultiAuth):
 
         PK = (g_s_i, g_alpha_s_i)
         VK = (g_alpha, gt_s)
-        return PK, VK
+
+        end = time.time()
+        rt = end - start
+
+        return PK, VK, rt
 
 
     def prove(self, PK, VC):
+        start = time.time()
+        
         g_s_i, g_alpha_s_i = PK
-
-        # Define p(x) as VC
         p_coeffs = VC
 
         # Compute g^p(s)
@@ -55,10 +59,15 @@ class MJ18(ABEncMultiAuth):
         delta = self.group.random(ZR)
         pi = (gp_s ** delta, gh_s ** delta, g_alpha_p_s ** delta)
 
-        return pi
+        end = time.time()
+        rt = end - start
+
+        return pi, rt
 
 
     def verify(self, VK, pi):
+        start = time.time()
+
         g_delta_p_s, g_delta_h_s, g_delta_alpha_p_s = pi
         g_alpha, g_t_s = VK
 
@@ -73,7 +82,10 @@ class MJ18(ABEncMultiAuth):
         print(f"is_valid_restriction: {is_valid_restriction}")
         print(f"is_valid_cofactor: {is_valid_cofactor}")
 
-        return is_valid_restriction and is_valid_cofactor
+        end = time.time()
+        rt = end - start
+
+        return is_valid_restriction and is_valid_cofactor, rt
 
 def polynomial_multiply(a, b, group):
     # Initialize result polynomial with zeros
@@ -132,17 +144,22 @@ def test_zksnark():
     print("Starting zk-SNARK Test...")
     
     group = PairingGroup('SS512')
-    d = 3
+    d = 5
 
     authToken = MJ18(group, d)
 
     # VC = [group.random(ZR) for _ in range(d + 1)]
     VC = [group.random(ZR) for _ in range(d + 1)]
 
-    PK, VK = authToken.setup()
-    pi = authToken.prove(PK, VC)
-    verified = authToken.verify(VK, pi)
+    PK, VK, setup_time = authToken.setup()
+    pi, proof_time = authToken.prove(PK, VC)
+    verified, verify_time = authToken.verify(VK, pi)
     
     print(f"Verification result: {verified}")
+
+    print(f'<<< TIME USED >>>')
+    print(f'setup_time: {setup_time}')
+    print(f'proof_time: {proof_time}')
+    print(f'verify_time: {verify_time}')
 
 test_zksnark()
