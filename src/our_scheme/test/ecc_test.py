@@ -15,19 +15,28 @@ import os
 
 # >>> This group is more consistent but the msg must be 20 bytes 
 # >>> message len should be group.bitsize() len for prime192v1 (or 20 bytes)
-groupObj = ECGroup(prime192v2)
-elgamal = ElGamal(groupObj)   
+groupObj1 = ECGroup(prime192v2)
+groupObj2 = ECGroup(prime192v2)
+elgamal1 = ElGamal(groupObj1)   
+elgamal2 = ElGamal(groupObj2)   
+print(groupObj1)
+print(groupObj2)
+
+print(elgamal1)
+print(elgamal2)
 
 # Generate key pair
-(pk, sk) = elgamal.keygen()
-print(pk, sk)
+(pk, sk) = elgamal1.keygen()
+print(pk, type(pk))
+print(sk, type(sk))
 
 # Encrypt a message
 plaintext = os.urandom(20)
-ciphertext = elgamal.encrypt(pk, plaintext)
+ciphertext = elgamal2.encrypt(pk, plaintext)
 
 # Decrypt the message
-decrypted_message = elgamal.decrypt(pk, sk, ciphertext)
+decrypted_message = elgamal2.decrypt(pk, sk, ciphertext)
 
 # Print the decrypted message
-# print(decrypted_message.decode())
+print(plaintext)
+print(decrypted_message)

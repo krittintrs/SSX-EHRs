@@ -70,8 +70,6 @@ class MJ18(ABEncMultiAuth):
             f.write(aes_key)
                 
         # CP-ABE Key Gen
-        # ✅✅✅TODO: Make it randomly generated
-        
         cpabe_pk = PUB_KEY_PATH
         cpabe_sk = "test_sk"
         test_attr = ["A", "B", "E"]
@@ -119,32 +117,10 @@ class MJ18(ABEncMultiAuth):
 
         return EHR, rt
     
-    def generate_authToken(self):
-        start = time.time()
-
-        # TODO: implement 
-
-        end = time.time()
-        rt = end - start
-
-        return rt
-    
-    def verify_authToken(self):
-        start = time.time()
-
-        # TODO: implement 
-
-        end = time.time()
-        rt = end - start
-
-        return rt
-    
     def reencryption(self, CT_padded_key_name, ecc_pub_key):
         start = time.time()
 
         # CP-ABE Decryption
-        # ✅✅✅ ADD in SET-UP TODO: add secret key generation for proxy gateway
-        
         padded_aes_key = dec_key_cpabe(CT_padded_key_name, PG_cpabe_sk, "re")
 
         # ECC Re-encryption
@@ -241,10 +217,7 @@ def dec_key_cpabe(CT_padded_key_name, cpabe_sk, mode):
         with open(output_path, 'rb') as f:
             padded_aes_key = f.read()
     except:
-        print('''
-              🚨🚨🚨🚨🚨🚨🚨🚨🚨
-               ⛔⛔⛔ERROR⛔⛔⛔
-              🚨🚨🚨🚨🚨🚨🚨🚨🚨''')
+        print(f'read file error with path: {output_path}')
 
     return padded_aes_key
 
@@ -301,16 +274,10 @@ def main():
                 # 4. Decryption 1
                 EHR_output1, dec1_time = ssxehr.decryption1(CT_EHR, CT_padded_key_name, cpabe_sk)
 
-                # 5. Generate authToken
-                gen_time = ssxehr.generate_authToken()
-
-                # 6. Verify authToken
-                vrf_time = ssxehr.verify_authToken()
-
-                # 7. Re-encryption
+                # 5. Re-encryption
                 RE_padded_aes_key, enc_k, pre_time = ssxehr.reencryption(CT_padded_key_name, ecc_pub_key)
                 
-                # 8. Decryption 2
+                # 6. Decryption 2
                 EHR_output2, dec2_time = ssxehr.decryption2(CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key)
 
                 # Output file
@@ -324,13 +291,13 @@ def main():
 
                 # Compare the original file with the decrypted file
                 if compare_files(input_file, output1_file):
-                    print(f'          File decryption 1 ✅✅successful✅✅ file size: {file_size}')
+                    print(f'          File decryption 1 successful file size: {file_size}')
                 else:
-                    print(f'          File decryption 1 ❌❌failed❌❌ file size: {file_size}')
+                    print(f'          File decryption 1 failed file size: {file_size}')
                 if compare_files(input_file, output2_file):
-                    print(f'          File decryption 2 ✅✅successful✅✅ file size: {file_size}')
+                    print(f'          File decryption 2 successful file size: {file_size}')
                 else:
-                    print(f'          File decryption 2 ❌❌failed❌❌ file size: {file_size}')
+                    print(f'          File decryption 2 failed file size: {file_size}')
                     
                 # Calculate time
                 set_tot += set_time
