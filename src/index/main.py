@@ -72,8 +72,10 @@ def throughput_test(num_leaves, search_requests, num_seqs=5):
     
     # Open a file to write the results
     with open("index.txt", "w") as file:
-        file.write("request\ttps\n")
-        
+        file.write('{:7} {:18}\n'.format(
+            'request', 'tps'
+        ))
+
         for num_requests in search_requests:
             total_requests = 0
             total_duration = 0
@@ -88,13 +90,18 @@ def throughput_test(num_leaves, search_requests, num_seqs=5):
                 total_duration += duration
                 
             tps = total_requests / total_duration
-            file.write(f"{num_requests:6}\t{tps:.2f}\n")
+            
+            out1 = str(num_requests).zfill(6)
+            out2 = str(format(tps, '.16f'))
+
+            file.write(f'{out1}  {out2}\n')
+
             print(f"Processed {num_requests} concurrent searches ({num_seqs} sequences) in {total_duration:.2f} seconds.")
             print(f"Throughput: {tps:.2f} transactions per second (TPS)")
             print(f"Successful searches: {successful_searches}/{num_requests}\n")
 
 if __name__ == "__main__":
-    num_leaves = 1000000  # 100k nodes
+    num_leaves = 1000000  # 1M nodes
     search_requests = [1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000, 512000]  # Increasing concurrent search requests
     
     throughput_test(num_leaves, search_requests)
