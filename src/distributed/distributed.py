@@ -59,7 +59,7 @@ class MJ18(ABEncMultiAuth):
 
         # ECC Key Gen
         groupObj = ECGroup(prime192v2)
-        self.elgamal = ElGamal(groupObj)   
+        self.elgamal = ElGamal(groupObj)
         (ecc_pub_key, ecc_priv_key) = self.elgamal.keygen()
 
         # AES Key Gen
@@ -158,40 +158,74 @@ class MJ18(ABEncMultiAuth):
 
         return RE_padded_aes_key, enc_k, rt
     
-    def parallel_reencryption(self, CT_padded_key_name_dict, ecc_pub_key, dup, proxy):
+    def parallel_reencryption(self, CT_padded_key_name_dict, ecc_pub_key_dict, proxy):
         start = time.time()
-        
-        # Step 1: Split CT_padded_key_name into chunks if it's a large file or contains multiple entries
-        # Assuming CT_padded_key_name is a list of key file names
-        
-        # Step 2: Set up multiprocessing Manager for sharing results
 
-        # Step 3: Wait for all processes to complete
+        # Step 1: Split CT_padded_key_name_dict into chunks based on proxy count
+        chunk_size = len(CT_padded_key_name_dict) // proxy
 
-        # Step 4: Aggregate results (if necessary)
-        # This could involve summing times, collecting keys, or any other result needed
+        # Step 2: Use multiprocessing Manager to handle parallel processes
+        manager = multiprocessing.Manager()
+        return_dict = manager.dict()
+        processes = []
+
+        # Step 3: Create parallel processes for re-encryption
+        for i in range(proxy):
+            chunk = CT_padded_key_name_dict[i * chunk_size:(i + 1) * chunk_size]
+            ecc_pub_key_chunk = ecc_pub_key_dict[i * chunk_size:(i + 1) * chunk_size]
+            
+            # Pass groupObj instead of self.elgamal
+            p = multiprocessing.Process(target=self._reencrypt_chunk, 
+                                        args=(chunk, ecc_pub_key_chunk, i, return_dict))
+            processes.append(p)
+            p.start()
+
+        # Step 4: Wait for all processes to finish
+        for p in processes:
+            p.join()
+
+        # Step 5: Aggregate results from return_dict
+        RE_padded_aes_key_dict = []
+        enc_k_dict = []
+        total_reencryption_time = 0
+
+        for i in range(proxy):
+            result = return_dict[i]
+            RE_padded_aes_key_dict.extend(result['RE_padded_aes_key'])
+            enc_k_dict.extend(result['enc_k'])
+            total_reencryption_time += result['reencryption_time']
 
         end = time.time()
-        total_reencryption_time = end - start
+        parallellpre_time = end - start
 
-        return
+        return RE_padded_aes_key_dict, enc_k_dict, parallellpre_time
 
-    def _reencrypt_chunk(self, chunk, ecc_pub_key, proxy_id, return_dict):
+
+    def _reencrypt_chunk(self, chunk, ecc_pub_key_chunk, proxy_id, return_dict):
         """
-        Re-encrypts each entry in the chunk and stores the result in the return_dict.
+        Re-encrypts each entry in the chunk using ECC, and stores the result in return_dict.
         """
+        # Create ElGamal instance within the subprocess
+        groupObj = ECGroup(prime192v2)
+        elgamal = ElGamal(groupObj)
+
         re_padded_aes_keys = []
         enc_ks = []
         reencryption_time = 0
 
-        for entry in chunk:
+        for i, entry in enumerate(chunk):
             start = time.time()
+
+            # Access dup and n directly from entry
+            dup = entry['dup']
+            n = entry['n']
+
             # CP-ABE Decryption to get padded AES key
-            padded_aes_key = dec_key_cpabe(entry, PG_cpabe_sk, "re")
+            padded_aes_key = dec_key_cpabe(entry['CT_padded'], PG_cpabe_sk, "re", dup, n)
 
             # ECC Re-encryption
             k = os.urandom(20)
-            enc_k = self.elgamal.encrypt(ecc_pub_key, k)
+            enc_k = elgamal.encrypt(ecc_pub_key_chunk[i]['ecc_pub_key'], k)
             RE_padded_aes_key = enc_aes(padded_aes_key, k)
 
             end = time.time()
@@ -307,6 +341,14 @@ def generate_sk_cpabe(sk_name, proxy_attr):
     sk_path = os.path.join(KEY_PATH, sk_name)
     cpabe_keygen_path = os.path.join(CPABE_PATH, 'cpabe-keygen')
     subprocess.run([cpabe_keygen_path, '-o', sk_path, PUB_KEY_PATH, MASTER_KEY_PATH] + proxy_attr, check=True)
+    
+def convert_key_to_list(key):
+    # Convert the elliptic curve key to a list of integers
+    return [int(x) for x in key]
+
+def convert_list_to_key(key_list):
+    # Convert a list of integers back to the elliptic curve key
+    return SomeEllipticCurveKeyClass(*key_list)  # Adjust according to your class
 
 #========================= MAIN ===========================#
 
@@ -323,7 +365,7 @@ def distributed_test():
                           5. 800 KB
                           6. 1.6 MB
                           :"""))
-    proxy = input("Enter the proxy number: ")
+    proxy = int(input("Enter the proxy number: "))
     
     return file_size_select, proxy
 
@@ -351,17 +393,18 @@ def main():
     CT_padded_key_name_dict = []
     ecc_pub_key_dict = []
     ecc_priv_key_dict = []
+    # ssxehr_elgamal_dict = []
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
         f.write('{:7} {:18} {:18}\n'.format(
             'Duplicate', 'PREAveTime', 'ParallelPREAveTime'
         ))
 
-        for round in range(seq):
+        for dup in range(len(duplicate)):
             ssxehr = MJ18(groupObj)
             pre_tot, parallellpre_tot = 0.0, 0.0
 
-            for dup in range(len(duplicate)):
+            for round in range(seq):
                 #---ENCRYPT---#
                 file_size = file_sizes[file_size_select - 1]
                 print(f'\nFile size: {file_size} bytes, seq: {round + 1}, duplicate: {duplicate[dup]}')
@@ -381,15 +424,19 @@ def main():
                     ecc_pub_key, ecc_priv_key, aes_key, cpabe_pk, cpabe_sk, key_time = ssxehr.keygen(file_size, dup, n)
                     ecc_pub_key_dict.append({'n': n, 'ecc_pub_key': ecc_pub_key})
                     ecc_priv_key_dict.append({'n': n, 'ecc_priv_key': ecc_priv_key})
+                    # ssxehr_elgamal_dict.append({'n': n, 'elgamal': ssxehr.elgamal})
 
                     # 3. Encryption
                     policy = "((A and B) or (C and D)) and E"
                     CT_EHR, CT_padded_key_name, enc_time = ssxehr.encryption(EHR, aes_key, cpabe_pk, policy, file_size, dup, n)
                     CT_EHR_dict.append({'n': n, 'CT_EHR': CT_EHR})
-                    CT_padded_key_name_dict.append({'n': n, 'CT_padded': CT_padded_key_name})
+                    # Inside the loop where encryption happens
+                    CT_padded_key_name_dict.append({'n': n, 'dup': dup, 'CT_padded': CT_padded_key_name})
+
                     
                 # 7.1 Re-encryption parallel
-                RE_padded_aes_key_dict, enc_k_dict, parallellpre_time = ssxehr.parallel_reencryption(CT_padded_key_name_dict, ecc_pub_key_dict, duplicate[dup], proxy)
+                print (CT_padded_key_name_dict)
+                RE_padded_aes_key_dict, enc_k_dict, parallellpre_time = ssxehr.parallel_reencryption(CT_padded_key_name_dict, ecc_pub_key_dict, proxy)
                 
                 # 8. Decryption 2
                 EHR_output2, dec2_time = ssxehr.decryption2(CT_EHR_dict, RE_padded_aes_key_dict, enc_k_dict, ecc_pub_key_dict, ecc_priv_key_dict)
