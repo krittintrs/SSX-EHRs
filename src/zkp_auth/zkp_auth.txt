@@ -1,0 +1,2 @@
+SetupAveTime       ProofAveTime       VerifyAveTime     
+0.0153097629547119 0.0225782871246338 0.0025438308715820
