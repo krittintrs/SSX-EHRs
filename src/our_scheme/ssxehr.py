@@ -119,26 +119,6 @@ class MJ18(ABEncMultiAuth):
 
         return EHR, rt
     
-    def generate_authToken(self):
-        start = time.time()
-
-        # TODO: implement 
-
-        end = time.time()
-        rt = end - start
-
-        return rt
-    
-    def verify_authToken(self):
-        start = time.time()
-
-        # TODO: implement 
-
-        end = time.time()
-        rt = end - start
-
-        return rt
-    
     def reencryption(self, CT_padded_key_name, ecc_pub_key):
         start = time.time()
 
