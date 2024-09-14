@@ -22,9 +22,6 @@ class MJ18(ABEncMultiAuth):
 
         t_s = sum(self.t_coeffs[i] * (self.s ** i) for i in range(len(self.t_coeffs)))
         gt_s = self.g ** t_s
-        # gt_s = self.group.init(G1, 1)
-        # for i in range(len(self.t_coeffs)):
-        #     gt_s *= g_s_i[i] ** self.t_coeffs[i]
 
         PK = (g_s_i, g_alpha_s_i)
         VK = (g_alpha, gt_s)
@@ -34,74 +31,44 @@ class MJ18(ABEncMultiAuth):
     def prove(self, PK, VC):
         g_s_i, g_alpha_s_i = PK
 
-        # Define p(x) as VC, with coefficients as ZR elements
+        # Define p(x) as VC
         p_coeffs = VC
-        # h_coeffs = [self.group.init(ZR, VC[i]) for i in range(2)]
-        # p_coeffs = polynomial_multiply(self.t_coeffs, h_coeffs, self.group)
-
-        # print(len(h_coeffs))
-        # print(len(self.t_coeffs))
-        # print(len(p_coeffs))
-        # print(len(pprime))
-        # print(f'p_coeffs: {p_coeffs}')
-        # print(f'pprime: {pprime}')
 
         # Compute g^p(s)
-        p_s = sum(p_coeffs[i] * (self.s ** i) for i in range(len(p_coeffs)))
-        gp_s = self.g ** p_s
+        gp_s = self.group.init(G1, 1)
+        for i in range(len(p_coeffs)):
+            gp_s *= g_s_i[i] ** p_coeffs[i]
 
         # Perform polynomial division
-        h_coeffs, r_coeffs = polynomial_division(p_coeffs, self.t_coeffs, self.group)
+        h_coeffs, _ = polynomial_division(p_coeffs, self.t_coeffs, self.group)
 
-        # Compute gh(s) with h_coeffs
+        # Compute g^h(s) with h_coeffs
         gh_s = self.group.init(G1, 1)
         for i in range(len(h_coeffs)):
             gh_s *= g_s_i[i] ** h_coeffs[i]
-        # h_s = sum(h_coeffs[i] * (self.s ** i) for i in range(len(h_coeffs)))
-        # gh_s = self.g ** h_s
-
-        # Compute remainder term
-        gr_s = self.group.init(G1, 1)
-        for i in range(len(r_coeffs)):
-            gr_s *= g_s_i[i] ** r_coeffs[i]
         
-        # Compute gαp(s)
+        # Compute g^alphap(s)
         g_alpha_p_s = self.group.init(G1, 1)
         for i in range(self.d + 1):
             g_alpha_p_s *= g_alpha_s_i[i] ** p_coeffs[i]
 
         delta = self.group.random(ZR)
         pi = (gp_s ** delta, gh_s ** delta, g_alpha_p_s ** delta)
-        # pi = (gp_s ** delta, gh_s ** delta, g_alpha_p_s ** delta, gr_s ** delta)
 
         return pi
 
 
     def verify(self, VK, pi):
         g_delta_p_s, g_delta_h_s, g_delta_alpha_p_s = pi
-        # g_delta_p_s, g_delta_h_s, g_delta_alpha_p_s, g_delta_r_s = pi
         g_alpha, g_t_s = VK
-        
-        # print(f"g_delta_p_s: {g_delta_p_s}")
-        # print(f"g_delta_h_s: {g_delta_h_s}")
-        # print(f"g_delta_alpha_p_s: {g_delta_alpha_p_s}")
-        # print(f"g_alpha: {g_alpha}")
-        # print(f"g_t_s: {g_t_s}")
 
         pair_1 = pair(g_delta_alpha_p_s, self.g)
         pair_2 = pair(g_delta_p_s, g_alpha)
         pair_3 = pair(g_delta_p_s, self.g)
         pair_4 = pair(g_delta_h_s, g_t_s)
-        # pair_5 = pair(g_delta_r_s, self.g)
-        
-        # print(f"pair_1: {pair_1}")
-        # print(f"pair_2: {pair_2}")
-        # print(f"pair_3: {pair_3}")
-        # print(f"pair_4: {pair_4}")
         
         is_valid_restriction = (pair_1 == pair_2)
         is_valid_cofactor    = (pair_3 == pair_4)
-        # is_valid_cofactor    = (pair_3 == pair_4*pair_5)
 
         print(f"is_valid_restriction: {is_valid_restriction}")
         print(f"is_valid_cofactor: {is_valid_cofactor}")
