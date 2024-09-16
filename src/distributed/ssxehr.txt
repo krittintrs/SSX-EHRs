@@ -1,0 +1,1 @@
+Size    SetAvgTime         KeyGenAvgTime      EncAveTime         Dec1AveTime        PREAveTime         Dec2AveTime       
