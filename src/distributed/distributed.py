@@ -268,7 +268,7 @@ class MJ18(ABEncMultiAuth):
 
         # Step 1: decrypt padded AES KEY with ECC private key
         k = self.elgamal.decrypt(ecc_pub_key, ecc_priv_key, enc_k)
-        print(f'k: {k} / {type(k)}')
+
         padded_aes_key = dec_aes(RE_padded_aes_key, k)
 
         # Step 2: Unpad AES KEY and decrypt file with unpadded AES KEY
@@ -435,8 +435,8 @@ def main():
     groupObj = PairingGroup('SS512')
     file_sizes = [50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
     # duplicate = [10, 100, 1000, 10000, 100000]
-    duplicate = [10, 100, 1000]
-    seq = 3
+    duplicate = [10, 100, 500]
+    seq = 1
     input_file_dir = '../sample/input_distributed/'
     output_file_dir = '../sample/output_distributed/'
     output_txt = './ssxehr_parallel.txt'
@@ -448,6 +448,8 @@ def main():
     CT_padded_key_name_dict = []
     ecc_pub_key_dict = []
     ecc_priv_key_dict = []
+    
+    EHR_output1 = []
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
         f.write('{:10} {:10} {:20} {:20}\n'.format(
@@ -466,7 +468,7 @@ def main():
                 # Prepare the decrypted file
                 for n in range(duplicate[dup]):
 
-                    input_file = f'{input_file_dir}input_file_{file_size}_{n}.bin'
+                    input_file = f'{input_file_dir}input_file_{file_size}_{n+1}.bin'
                     with open(input_file, 'rb') as f_in:
                         EHR = f_in.read()
 
@@ -484,6 +486,15 @@ def main():
                     CT_EHR_dict.append({'n': n, 'CT_EHR': CT_EHR})
                     CT_padded_key_name_dict.append({'n': n, 'dup': dup, 'CT_padded': CT_padded_key_name})
                     
+                    # 4. Decryption 1
+                    # EHR, dec1_time = ssxehr.decryption1(CT_EHR, CT_padded_key_name, cpabe_sk, dup, n)
+                    # EHR_output1.append(EHR)
+                    
+                    # output1_file = f'{output_file_dir}output1_file_{file_size}_{n+1}.bin'                    
+                    # with open(output1_file, 'wb') as f_out:
+                    #     for ehr in EHR_output1:
+                    #         f_out.write(ehr)
+                            
                     # 5. Re-encryption
                     RE_padded_aes_key, enc_k, pre_time = ssxehr.reencryption(CT_padded_key_name, ecc_pub_key)
                     
@@ -494,7 +505,8 @@ def main():
                 
                 # 8. Decryption 2
                 # Extract necessary information
-                ct_ehr_dict = {entry['n']: entry['CT_EHR'] for entry in CT_EHR_dict}
+                # print(f'\nCT_EHR_dict: {CT_EHR_dict}')
+                ct_ehr_dict = {entry['n']: entry['CT_EHR'] for entry in CT_EHR_dict}    
                 
                 # Perform decryption
                 EHR_output2 = []
@@ -506,25 +518,28 @@ def main():
                     pub_key = ecc_pub_key_dict[n]
                     
                     if enc_k and re_padded_aes_key and priv_key and pub_key:
+                        print(f'enc_k: {enc_k}, re_padded_aes_key: {re_padded_aes_key}')
+                        print(f'priv_key: {priv_key}, pub_key: {pub_key}')
+                        test = input('Continue? (y/n): ')
                         EHR, dec2_time = ssxehr.decryption2(ct_ehr, re_padded_aes_key, enc_k, pub_key, priv_key)
                         EHR_output2.append(EHR)
                     else:
                         print(f"Missing data for decryption for file number {n}")
-
-                # Output file       
-                output2_file = f'{output_file_dir}output_file_{file_size}_{dup}.bin'
-                with open(output2_file, 'wb') as f_out:
-                    for ehr in EHR_output2:
-                        f_out.write(ehr)
-
+                
                 for n in range(duplicate[dup]):
-                    input_file = f'{input_file_dir}input_file_{file_size}_{n}.bin'
-                    output_file = f'{output_file_dir}output_file_{file_size}_{n}.bin'
-                    print(f'          File {n+1} decryption 2: {input_file}')
-                    print(f'          File {n+1} decryption 2: {output_file}')
+                    output2_file = f'{output_file_dir}output2_file_{file_size}_{n+1}.bin'
+                    with open(output2_file, 'wb') as f_out:
+                        for ehr in EHR_output2:
+                            f_out.write(ehr)
+                    input_file = f'{input_file_dir}input_file_{file_size}_{n+1}.bin'
                     
                     # Compare the original file with the decrypted file
-                    if compare_files(input_file, output_file):
+                    # if compare_files(input_file, output1_file):
+                    #     print(f'          File decryption 1 ✅✅successful✅✅ file size: {file_size}')
+                    # else:
+                    #     print(f'          File decryption 1 ❌❌failed❌❌ file size: {file_size}')
+                    print(f' input file: {input_file}, output2 file: {output2_file}')
+                    if compare_files(input_file, output2_file):
                         print(f'          File decryption 2 ✅✅successful✅✅ file size: {file_size}')
                     else:
                         print(f'          File decryption 2 ❌❌failed❌❌ file size: {file_size}')
