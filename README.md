@@ -122,9 +122,3 @@ rm -rf gmp-6.2.1.tar.zst
 rm -rf pbc-0.5.14.tar.gz
 ```
 
-## Python Library -> No need to use now for Linux
-
-```bash
-pip install -r requirements.txt
-```
-
