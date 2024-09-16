@@ -146,7 +146,7 @@ class MJ18(ABEncMultiAuth):
         # CP-ABE Decryption
         # ✅✅✅ ADD in SET-UP TODO: add secret key generation for proxy gateway
         
-        padded_aes_key = dec_key_cpabe(CT_padded_key_name, PG_cpabe_sk, "re")
+        padded_aes_key = dec_key_cpabe_old(CT_padded_key_name, PG_cpabe_sk, "re")
 
         # ECC Re-encryption
         k = os.urandom(20)
@@ -160,6 +160,7 @@ class MJ18(ABEncMultiAuth):
     
     def parallel_reencryption(self, CT_padded_key_name_dict, ecc_pub_key_dict, proxy):
         start = time.time()
+        groupObj = ECGroup(prime192v2)
 
         # Step 1: Split CT_padded_key_name_dict into chunks based on proxy count
         chunk_size = len(CT_padded_key_name_dict) // proxy
@@ -173,8 +174,6 @@ class MJ18(ABEncMultiAuth):
         for i in range(proxy):
             chunk = CT_padded_key_name_dict[i * chunk_size:(i + 1) * chunk_size]
             ecc_pub_key_chunk = ecc_pub_key_dict[i * chunk_size:(i + 1) * chunk_size]
-            print(f'ecc_pub_key_chunk: {type(ecc_pub_key_chunk)}')
-            print(f'chunk: {type(chunk)}')
             
             # Pass groupObj instead of self.elgamal
             p = multiprocessing.Process(target=self._reencrypt_chunk, 
@@ -193,20 +192,21 @@ class MJ18(ABEncMultiAuth):
 
         for i in range(proxy):
             if i not in return_dict:
-                print(f"Missing result for proxy {i}")
+                print(f"Missing result for proxy {i+1}")
                 continue
 
-            result = return_dict[i]
-            RE_padded_aes_key_dict.extend(result['RE_padded_aes_key'])
-            enc_k_dict.extend(result['enc_k'])
-            total_reencryption_time += result['reencryption_time']
+            result = return_dict.get(i, {})
+            if result:
+                # Deserialize as single elliptic curve elements
+                deserialized_enc_ks = [{'c1': groupObj.deserialize(enc_k['c1']),
+                                        'c2': groupObj.deserialize(enc_k['c2'])} for enc_k in result['enc_k']]
+                
+                RE_padded_aes_key_dict.extend(result['RE_padded_aes_key'])
+                enc_k_dict.extend(deserialized_enc_ks)
+                total_reencryption_time += result['reencryption_time']
 
         end = time.time()
         parallellpre_time = end - start
-        
-        #check
-        print(f"RE_padded_aes_key_dict: {RE_padded_aes_key_dict}")
-        print(f"enc_k_dict: {enc_k_dict}")
 
         return RE_padded_aes_key_dict, enc_k_dict, parallellpre_time
 
@@ -214,8 +214,6 @@ class MJ18(ABEncMultiAuth):
         try:
             groupObj = ECGroup(prime192v2)
             elgamal = ElGamal(groupObj)
-            print(f'groupObj: {type(groupObj)}')
-            print(f'elgamal: {type(elgamal)}')
             
             re_padded_aes_keys = []
             enc_ks = []
@@ -223,7 +221,6 @@ class MJ18(ABEncMultiAuth):
             
             for i, entry in enumerate(chunk):
                 start = time.time()
-                print(i)
 
                 # Access dup and n directly from entry
                 dup = entry['dup']
@@ -245,13 +242,19 @@ class MJ18(ABEncMultiAuth):
                 re_padded_aes_keys.append(RE_padded_aes_key)
                 enc_ks.append(enc_k)
 
-            print(f"Proxy {proxy_id} re-encryption done")
+            # Serialize the elliptic_curve.Element objects
+            serialized_enc_ks = [{'c1': groupObj.serialize(enc_k['c1']),
+                                'c2': groupObj.serialize(enc_k['c2'])} for enc_k in enc_ks]
+            
             # Store results in return_dict
             return_dict[proxy_id] = {
                 'RE_padded_aes_key': re_padded_aes_keys,
-                'enc_k': enc_ks,
+                'enc_k': serialized_enc_ks,  # Using the serialized version
                 'reencryption_time': reencryption_time
             }
+            
+            print(f"Proxy {proxy_id+1} re-encryption done")
+            
         except Exception as e:
             print(f"Error in _reencrypt_chunk for proxy_id {proxy_id}: {str(e)}")
             return_dict[proxy_id] = {
@@ -319,6 +322,35 @@ def enc_key_cpabe(padded_key, policy, file_size, cpabe_pk, dub, n):
 
     return CT_padded_key_name
 
+def dec_key_cpabe_old(CT_padded_key_name, cpabe_sk, mode):
+    # CPABE & PK path
+    cpabe_dec = os.path.join(CPABE_PATH, 'cpabe-dec')
+    SECRET_KEY_PATH = os.path.join(KEY_PATH, cpabe_sk) 
+
+    # Input path (CT_padded_key)
+    input_path = os.path.join(KEY_PATH, CT_padded_key_name)
+
+    # Output path (padded_key)
+    prefix = "enc_padded_aes_key_"
+    file_size = CT_padded_key_name[len(prefix):]
+    if mode == "dec":
+        padded_key_name = "dec_padded_aes_key_" + str(file_size)
+    elif mode == "re":
+        padded_key_name = "dec_re_padded_aes_key_" + str(file_size)
+    output_path = os.path.join(KEY_PATH, padded_key_name)
+
+    # Perform CP-ABE decryption
+    subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, SECRET_KEY_PATH, input_path, "-o", output_path])
+    
+    # Read the padded_key to return
+    try:
+        with open(output_path, 'rb') as f:
+            padded_aes_key = f.read()
+    except:
+        print(f'read file error with path: {output_path}')
+
+    return padded_aes_key
+    
 def dec_key_cpabe(CT_padded_key_name, cpabe_sk, mode, dup, n):
     # CPABE & PK path
     cpabe_dec = os.path.join(CPABE_PATH, 'cpabe-dec')
@@ -394,7 +426,7 @@ def distributed_test():
 def create_test_files(file_sizes, file_size_select, duplicate):
     for n in range(duplicate):
         size = file_sizes[file_size_select - 1]
-        with open(f'../sample/input_distributed/input_file_{size}_{n}.bin', 'wb') as f:
+        with open(f'../sample/input_distributed/input_file_{size}_{n+1}.bin', 'wb') as f:
             f.write(os.urandom(size))
         n += 1
     print(f'Create test file with size {size}: done')
@@ -402,14 +434,15 @@ def create_test_files(file_sizes, file_size_select, duplicate):
 def main():
     groupObj = PairingGroup('SS512')
     file_sizes = [50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
-    duplicate = [10, 100, 1000, 10000, 100000]
-    seq = 5
+    # duplicate = [10, 100, 1000, 10000, 100000]
+    duplicate = [10, 100, 1000]
+    seq = 3
     input_file_dir = '../sample/input_distributed/'
     output_file_dir = '../sample/output_distributed/'
     output_txt = './ssxehr_parallel.txt'
     
     file_size_select, proxy = distributed_test()
-    create_test_files(file_sizes, file_size_select, duplicate[1])
+    create_test_files(file_sizes, file_size_select, duplicate[2])
         
     CT_EHR_dict = []
     CT_padded_key_name_dict = []
@@ -417,13 +450,13 @@ def main():
     ecc_priv_key_dict = []
 
     with open(output_txt, 'w+', encoding='utf-8') as f:
-        f.write('{:7} {:18} {:18}\n'.format(
-            'Duplicate', 'PREAveTime', 'ParallelPREAveTime'
+        f.write('{:10} {:10} {:20} {:20}\n'.format(
+            'File Size', 'File amount', 'PREAveTime', 'ParallelPREAveTime'
         ))
 
         for dup in range(len(duplicate)):
             ssxehr = MJ18(groupObj)
-            pre_tot, parallellpre_tot = 0.0, 0.0
+            total_pre_time, pre_tot, parallellpre_tot = 0.0, 0.0, 0.0
 
             for round in range(seq):
                 #---ENCRYPT---#
@@ -450,7 +483,12 @@ def main():
                     CT_EHR, CT_padded_key_name, enc_time = ssxehr.encryption(EHR, aes_key, cpabe_pk, policy, file_size, dup, n)
                     CT_EHR_dict.append({'n': n, 'CT_EHR': CT_EHR})
                     CT_padded_key_name_dict.append({'n': n, 'dup': dup, 'CT_padded': CT_padded_key_name})
-
+                    
+                    # 5. Re-encryption
+                    RE_padded_aes_key, enc_k, pre_time = ssxehr.reencryption(CT_padded_key_name, ecc_pub_key)
+                    
+                    pre_tot += pre_time
+                
                 # 7.1 Re-encryption parallel
                 RE_padded_aes_key_dict, enc_k_dict, parallellpre_time = ssxehr.parallel_reencryption(CT_padded_key_name_dict, ecc_pub_key_dict, proxy)
                 
@@ -462,51 +500,53 @@ def main():
                 EHR_output2 = []
                 for n in range(duplicate[dup]):
                     ct_ehr = ct_ehr_dict[n]
-                    enc_k = [enc_k for enc_k in enc_k_dict if enc_k['n'] == n]
-                    re_padded_aes_key = [key for key in RE_padded_aes_key_dict if key['n'] == n]
+                    enc_k = enc_k_dict[n]
+                    re_padded_aes_key = RE_padded_aes_key_dict[n]
                     priv_key = ecc_priv_key_dict[n]
                     pub_key = ecc_pub_key_dict[n]
-                    print(f'enc_k: {enc_k}')
-                    print(f're_padded_aes_key: {re_padded_aes_key}')
-                    print(f'priv_key: {priv_key}')
-                    print(f'pub_key: {pub_key}')
-                    test = input('Continue?')
                     
                     if enc_k and re_padded_aes_key and priv_key and pub_key:
-                        EHR, dec2_time = ssxehr.decryption2(ct_ehr, re_padded_aes_key[0], enc_k[0], pub_key, priv_key)
+                        EHR, dec2_time = ssxehr.decryption2(ct_ehr, re_padded_aes_key, enc_k, pub_key, priv_key)
                         EHR_output2.append(EHR)
                     else:
                         print(f"Missing data for decryption for file number {n}")
 
                 # Output file       
-                output2_file = f'{output_file_dir}output_file2_{file_size}_{dup}.bin'
+                output2_file = f'{output_file_dir}output_file_{file_size}_{dup}.bin'
                 with open(output2_file, 'wb') as f_out:
                     for ehr in EHR_output2:
                         f_out.write(ehr)
 
-                # Compare the original file with the decrypted file
-                if compare_files(input_file, output2_file):
-                    print(f'          File decryption 2 ✅✅successful✅✅ file size: {file_size}')
-                else:
-                    print(f'          File decryption 2 ❌❌failed❌❌ file size: {file_size}')
+                for n in range(duplicate[dup]):
+                    input_file = f'{input_file_dir}input_file_{file_size}_{n}.bin'
+                    output_file = f'{output_file_dir}output_file_{file_size}_{n}.bin'
+                    print(f'          File {n+1} decryption 2: {input_file}')
+                    print(f'          File {n+1} decryption 2: {output_file}')
+                    
+                    # Compare the original file with the decrypted file
+                    if compare_files(input_file, output_file):
+                        print(f'          File decryption 2 ✅✅successful✅✅ file size: {file_size}')
+                    else:
+                        print(f'          File decryption 2 ❌❌failed❌❌ file size: {file_size}')
                     
                 # Calculate time
                 parallellpre_tot += parallellpre_time
 
                 total_time = parallellpre_time
-                print('Total time for this run: ', total_time)
+                total_pre_time += pre_tot
+                print('Total pre time for this run: ', total_pre_time)
+                print('Total parallel time for this run: ', total_time)
 
             # Write the average times for the current file size
-            avg_pre_time = pre_tot / seq
+            avg_pre_time = total_pre_time / seq
             avg_parallellpre_time = parallellpre_tot / seq
 
-            out0 = str(file_size).zfill(7)
-            out1 = str(format(avg_pre_time, '.16f'))
-            out2 = str(format(avg_parallellpre_time, '.16f'))
-
-            f.write(f'{out0} {out1} {out2}\n')
-
-
+            f.write('{:10} {:10} {:20.16f} {:20.16f}\n'.format(
+                file_size,
+                duplicate[dup],
+                avg_pre_time,
+                avg_parallellpre_time
+            ))
 
 if __name__ == '__main__':
     main()

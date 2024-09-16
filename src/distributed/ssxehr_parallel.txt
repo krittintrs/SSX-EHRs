@@ -1,1 +1,1 @@
-Duplicate PREAveTime         ParallelPREAveTime
+File Size  File amount PREAveTime           ParallelPREAveTime  
