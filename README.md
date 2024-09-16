@@ -62,9 +62,14 @@ pip install matplotlib
 pip install pyparsing==2.4.6
 ```
 
+clone charm
+```bash
+git clone https://github.com/JHUISI/charm.git
+```
+
 openssl
 ```bash
-cd ~/alphabet/charm/
+cd ~/charm/
 wget https://www.openssl.org/source/openssl-1.1.1n.tar.gz
 tar -zxvf openssl-1.1.1n.tar.gz
 cd openssl-1.1.1n/
@@ -76,7 +81,7 @@ dpkg -l | grep openssl
 
 gmp
 ```bash
-cd ~/alphabet/charm/
+cd ~/charm/
 wget https://gmplib.org/download/gmp/gmp-6.2.1.tar.zst
 tar -I zstd -xvf gmp-6.2.1.tar.zst
 cd gmp-6.2.1/
@@ -89,7 +94,7 @@ dpkg -l | grep gmp
 
 pbc
 ```bash
-cd ~/alphabet/charm/
+cd ~/charm/
 wget http://crypto.stanford.edu/pbc/files/pbc-0.5.14.tar.gz
 tar -xvf pbc-0.5.14.tar.gz
 cd pbc-0.5.14/
@@ -102,10 +107,7 @@ dpkg -l | grep pbc
 
 charm Installation 
 ```bash
-cd ~/alphabet/charm/
-git clone https://github.com/JHUISI/charm.git
 cd charm/
-sudo ./configure.sh
 sudo ./configure.sh --python=$(pyenv which python)
 
 make
@@ -116,7 +118,7 @@ sudo ldconfig /usr/local/lib/
 
 clean up
 ```bash
-cd ~/alphabet/charm/
+cd ~/charm/
 rm -rf openssl-1.1.1n.tar.gz
 rm -rf gmp-6.2.1.tar.zst
 rm -rf pbc-0.5.14.tar.gz
