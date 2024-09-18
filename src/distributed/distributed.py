@@ -39,13 +39,13 @@ class MJ18(ABEncMultiAuth):
     def setup(self):
         start = time.time()
 
-        self.g = self.group.random(G1)
-        self.alpha = self.group.random(ZR)
-        self.beta = self.group.random(ZR)
-        self.h = self.g ** self.beta
-        self.f = self.g ** (1 / self.beta)
-        self.e_gg_alpha = pair(self.g, self.g) ** self.alpha
-        self.g_alpha = self.g ** self.alpha
+        # self.g = self.group.random(G1)
+        # self.alpha = self.group.random(ZR)
+        # self.beta = self.group.random(ZR)
+        # self.h = self.g ** self.beta
+        # self.f = self.g ** (1 / self.beta)
+        # self.e_gg_alpha = pair(self.g, self.g) ** self.alpha
+        # self.g_alpha = self.g ** self.alpha
 
         setup_cpabe()
 
@@ -226,8 +226,9 @@ class MJ18(ABEncMultiAuth):
                 padded_aes_key = dec_key_cpabe(CT_padded, PG_cpabe_sk, "re", dup=None, n=None)
 
                 # Generate random key and encrypt it using ElGamal with the ECC public key
-                k = os.urandom(20)
+                k = b'12345678901234567890'
                 enc_k = elgamal.encrypt(ecc_pub_key, k)
+                print('***************** encryption aes(k of ecc) for Repadded_aes_key *****************')
                 RE_padded_aes_key = enc_aes(padded_aes_key, k)
 
                 end = time.time()
@@ -258,13 +259,21 @@ class MJ18(ABEncMultiAuth):
         # Step 1: decrypt padded AES KEY with ECC private key
         k = self.elgamal.decrypt(ecc_pub_key, ecc_priv_key, enc_k)
 
+        print('-------------------Decryption aes for RE_padded_aes_key-------------------')
         padded_aes_key = dec_aes(RE_padded_aes_key, k)
 
         # Step 2: Unpad AES KEY and decrypt file with unpadded AES KEY
         aes_key = unpad_aes_key(padded_aes_key, self.start_pad_size, self.end_pad_size)
 
         # Step 3: decrypt CT EHR using AES key
+        print('-------------------Decryption aes for CT_EHR-------------------')
         EHR = dec_aes(CT_EHR, aes_key)
+        
+        print(f'\n => Decryption 2 \nEHR: {EHR}')
+        print(f'k: {k}')
+        print(f'RE_padded_aes_key: {RE_padded_aes_key}')
+        print(f'padded_aes_key: {padded_aes_key}')
+        print(f'aes_key: {len(aes_key)}')
 
         end = time.time()
         rt = end - start
@@ -274,11 +283,20 @@ class MJ18(ABEncMultiAuth):
 def enc_aes(m, key):
     symmetric_key = SymmetricCryptoAbstraction(key)
     CT = symmetric_key.encrypt(m)
+    
+    print(f'\nenc_aes m: {m}')
+    print(f'enc_aes CT: {CT}')
+    print(f'enc_aes key: {key}')
+
     return CT
 
 def dec_aes(CT, key):
     symmetric_key = SymmetricCryptoAbstraction(key)
     m = symmetric_key.decrypt(CT)
+    
+    print(f'\nndec_aes m: {m}')
+    print(f'dec_aes CT: {CT}')
+    print(f'dec_aes key: {key}')
     return m
 
 def pad_aes_key(aes_key, start_pad_size, end_pad_size):
@@ -396,6 +414,9 @@ def convert_list_to_key(key_list, groupObj):
 #========================= MAIN ===========================#
 
 def compare_files(file1, file2):
+    with open(file1, 'rb') as f1, open(file2, 'rb') as f2:
+        print(f'input file: {f1.read()}, \noutput file: {f2.read()}')
+    
     return filecmp.cmp(file1, file2, shallow=False)
 
 def distributed_test():
@@ -422,9 +443,9 @@ def create_test_files(file_sizes, file_size_select, duplicate):
 
 def main():
     groupObj = PairingGroup('SS512')
-    file_sizes = [50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
+    file_sizes = [20, 50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
     # duplicate = [10, 100, 1000, 10000, 100000]
-    duplicate = [2, 100, 500]
+    duplicate = [10, 100, 500]
     seq = 1
     input_file_dir = '../sample/input_distributed/'
     output_file_dir = '../sample/output_distributed/'
@@ -478,37 +499,28 @@ def main():
                     # CT_padded_key_name_dict.append({'n': n, 'dup': dup, 'CT_padded': CT_padded_key_name})
                     
                     # 4. Concat all required element
-                    all_list[n] = {'CT_EHR': CT_EHR, 'CT_padded': CT_padded_key_name, 'ecc_pub_key': ecc_pub_key, 'ecc_priv_key': ecc_priv_key, 'RE_padded_aes_key':'', 'enc_k':'', 'output_file': ''}
+                    all_list[n] = {'CT_EHR': CT_EHR, 'CT_padded': CT_padded_key_name, 'ecc_pub_key': ecc_pub_key, 'ecc_priv_key': ecc_priv_key, 'RE_padded_aes_key':'', 'enc_k':''}
                     
                                                
                     # 5. Re-encryption
-                    RE_padded_aes_key, enc_k, pre_time = ssxehr.reencryption(CT_padded_key_name, ecc_pub_key)
+                    # RE_padded_aes_key, enc_k, pre_time = ssxehr.reencryption(CT_padded_key_name, ecc_pub_key)
                     
-                    # 8 check decrypt 2 for non-parallell
-                    EHR, dec2_time = ssxehr.decryption2(CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key)
+                    # 6 check decrypt 2 for non-parallell
+                    # EHR, dec2_time = ssxehr.decryption2(CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key)
                     
-                    output_file = f'{output_file_dir}output_file_{file_size}_{n+1}.bin'
-                    with open(output_file, 'wb') as f_out:
-                        f_out.write(EHR)
-                    input_file = f'{input_file_dir}input_file_{file_size}_{n+1}.bin'
-                    print(f' input file: {input_file}, output file: {output_file}')
-                    if compare_files(input_file, output_file):
-                        print(f'          File decryption 2 ✅✅successful✅✅ file size: {file_size}')
-                    else:
-                        print(f'          File decryption 2 ❌❌failed❌❌ file size: {file_size}')
+                    # output_file = f'{output_file_dir}output_file_{file_size}_{n+1}.bin'
+                    # with open(output_file, 'wb') as f_out:
+                    #     f_out.write(EHR)
+                    # input_file = f'{input_file_dir}input_file_{file_size}_{n+1}.bin'
+                    # print(f' input file: {input_file}, output file: {output_file}')
+                    # if compare_files(input_file, output_file):
+                    #     print(f'          File decryption 2 ✅✅successful✅✅ file size: {file_size}')
+                    # else:
+                    #     print(f'          File decryption 2 ❌❌failed❌❌ file size: {file_size}')
                     
-                    pre_tot += pre_time
+                    # pre_tot += pre_time
                 
                 # 7.1 Re-encryption parallel
-                # Create a new dictionary that excludes the 'CT_EHR' field
-                all_list_without_ct_ehr = {
-                    key: {k: v for k, v in value.items() if k != 'CT_EHR'}
-                    for key, value in all_list.items()
-                }
-
-                # Print the modified dictionary without 'CT_EHR'
-                print(f'All list (without CT_EHR): {all_list_without_ct_ehr}')
-
                 all_list, parallellpre_time = ssxehr.parallel_reencryption(all_list, proxy)
                 
                 # 8. Decryption 2
@@ -523,9 +535,17 @@ def main():
                     re_padded_aes_key = all_list[n]['RE_padded_aes_key']
                     priv_key = all_list[n]['ecc_priv_key']  # Assuming 'ecc_priv_key' is added to all_list
                     pub_key = all_list[n]['ecc_pub_key']
+                    
+                    print('\n=================================== Loop of decryption2 of paralell', n)
+                    print(f'CT_EHR: {ct_ehr}')
+                    print(f'enc_k: {enc_k}')
+                    print(f're_padded_aes_key: {re_padded_aes_key}')
+                    print(f'priv_key: {priv_key}')
+                    print(f'pub_key: {pub_key}')
 
                     if enc_k and re_padded_aes_key and priv_key and pub_key:
                         EHR, dec2_time = ssxehr.decryption2(ct_ehr, re_padded_aes_key, enc_k, pub_key, priv_key)
+                        print(f'\n +++++ check after decryption2{n+1} \nEHR: {EHR}')
                         EHR_output2.append(EHR)
                     else:
                         print(f"Missing data for decryption for file number {n}")
@@ -534,11 +554,10 @@ def main():
                 for n in range(duplicate[dup]):
                     output2_file = f'{output_file_dir}output2_file_{file_size}_{n+1}.bin'
                     with open(output2_file, 'wb') as f_out:
-                        for ehr in EHR_output2:
-                            f_out.write(ehr)
+                        f_out.write(EHR_output2[n])
 
-                    input_file = f'{input_file_dir}input_file_{file_size}_{1}.bin'
-                    print(f' input file: {input_file}, output2 file: {output2_file}')
+                    input_file = f'{input_file_dir}input_file_{file_size}_{n+1}.bin'
+                    # print(f' input file: {input_file}, output2 file: {output2_file}')
                     
                     if compare_files(input_file, output2_file):
                         print(f'          File decryption 2 ✅✅successful✅✅ file size: {file_size}')
