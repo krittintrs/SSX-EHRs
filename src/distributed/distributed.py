@@ -194,27 +194,12 @@ class MJ18(ABEncMultiAuth):
         # Step 4: Wait for all processes to finish
         for p in processes:
             p.join()
-
-        # Step 5: Aggregate results from return_dict and sort by the 'id'
-        results = []
-        for i in range(proxy):
-            if i not in return_dict:
-                print(f"Missing result for proxy {i+1}")
-                continue
-            result = return_dict.get(i, {})
-            if result:
-                results.extend(result['results'])  # Extract the list of results
-
-        # Sort results based on the original id to maintain sequence
-        sorted_results = sorted(results, key=lambda x: x['id'])
-        print(f"Sorted results: {sorted_results}")
-
-        # Update all_list with re-encryption results in the correct sequence
-        for res in sorted_results:
-            all_list[res['id']]['RE_padded_aes_key'] = res['RE_padded_aes_key']
-            all_list[res['id']]['enc_k'] = {
-                'c1': groupObj.deserialize(res['enc_k']['c1']),
-                'c2': groupObj.deserialize(res['enc_k']['c2'])
+                
+        for i in return_dict.keys():
+            all_list[i]['RE_padded_aes_key'] = return_dict[i]['RE_padded_aes_key']
+            all_list[i]['enc_k'] = {
+                'c1': groupObj.deserialize(return_dict[i]['enc_k']['c1']),
+                'c2': groupObj.deserialize(return_dict[i]['enc_k']['c2'])
             }
 
         end = time.time()
@@ -227,15 +212,14 @@ class MJ18(ABEncMultiAuth):
             groupObj = ECGroup(prime192v2)
             elgamal = ElGamal(groupObj)
 
-            results = []
             reencryption_time = 0
 
             for entry in chunk_with_ids:
                 start = time.time()
 
                 # Retrieve the necessary data from the entry
-                CT_padded = entry['CT_padded']
                 chunk_id = entry['id']
+                CT_padded = entry['CT_padded']
                 ecc_pub_key = entry['ecc_pub_key']
 
                 # CP-ABE Decryption to get padded AES key
@@ -250,21 +234,15 @@ class MJ18(ABEncMultiAuth):
                 reencryption_time += (end - start)
 
                 # Append results with the id for proper sorting later
-                results.append({
-                    'id': chunk_id,
+                return_dict[chunk_id] = {
                     'RE_padded_aes_key': RE_padded_aes_key,
                     'enc_k': {
                         'c1': groupObj.serialize(enc_k['c1']),
                         'c2': groupObj.serialize(enc_k['c2'])
                     }
-                })
+                }
 
             # Store results in return_dict for the parallel process to collect later
-            return_dict[proxy_id] = {
-                'results': results,
-                'reencryption_time': reencryption_time
-            }
-
             print(f"Proxy {proxy_id + 1} re-encryption done")
 
         except Exception as e:
@@ -522,7 +500,15 @@ def main():
                     pre_tot += pre_time
                 
                 # 7.1 Re-encryption parallel
-                print(f'All list: {all_list}')
+                # Create a new dictionary that excludes the 'CT_EHR' field
+                all_list_without_ct_ehr = {
+                    key: {k: v for k, v in value.items() if k != 'CT_EHR'}
+                    for key, value in all_list.items()
+                }
+
+                # Print the modified dictionary without 'CT_EHR'
+                print(f'All list (without CT_EHR): {all_list_without_ct_ehr}')
+
                 all_list, parallellpre_time = ssxehr.parallel_reencryption(all_list, proxy)
                 
                 # 8. Decryption 2
