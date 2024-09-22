@@ -8,11 +8,13 @@ from charm.schemes.pkenc.pkenc_elgamal85 import ElGamal
 from charm.toolbox.ecgroup import ECGroup
 from charm.toolbox.eccurve import prime192v2
 import subprocess 
+from multiprocessing import Lock
 import time
 import filecmp
 import multiprocessing
 
 # Constants
+ROUND = 0
 FILE_PATH = './file'
 PLAIN_FILE_PATH = os.path.join(FILE_PATH,'plain_file')
 ENC_FILE_PATH = os.path.join(FILE_PATH,'encrypted_file')
@@ -65,7 +67,8 @@ class MJ18(ABEncMultiAuth):
         # AES Key Gen
         key_name = "aes_key_" + str(file_size) + "_" + str(dup) + "_" + str(n)
         AES_KEY_PATH = os.path.join(KEY_PATH, key_name)
-        aes_key = os.urandom(self.aes_key_size)
+        # aes_key = os.urandom(self.aes_key_size)
+        aes_key = b'12345678901234567890123456789012'
 
         with open(AES_KEY_PATH, 'wb') as f:
             f.write(aes_key)
@@ -175,19 +178,10 @@ class MJ18(ABEncMultiAuth):
             # Fetch corresponding chunks from all_list
             chunk = {key: all_list[key] for key in list(all_list.keys())[i * chunk_size:(i + 1) * chunk_size]}
             
-            # Prepare the chunk data with id and the necessary elements
-            chunk_with_ids = [
-                {
-                    'id': i * chunk_size + j,
-                    'CT_padded': entry['CT_padded'],
-                    'ecc_pub_key': entry['ecc_pub_key']
-                }
-                for j, (key, entry) in enumerate(chunk.items())
-            ]
-            
             # Start parallel processes
+            lock = Lock()
             p = multiprocessing.Process(target=self._reencrypt_chunk, 
-                                        args=(chunk_with_ids, i, return_dict))
+                                        args=(chunk, i, return_dict, lock))
             processes.append(p)
             p.start()
 
@@ -207,24 +201,27 @@ class MJ18(ABEncMultiAuth):
 
         return all_list, parallellpre_time
 
-    def _reencrypt_chunk(self, chunk_with_ids, proxy_id, return_dict):
+    def _reencrypt_chunk(self, chunk, proxy_id, return_dict, lock):
         try:
             groupObj = ECGroup(prime192v2)
             elgamal = ElGamal(groupObj)
-
             reencryption_time = 0
 
-            for entry in chunk_with_ids:
+            for i in chunk.keys():
                 start = time.time()
 
-                # Retrieve the necessary data from the entry
-                chunk_id = entry['id']
-                CT_padded = entry['CT_padded']
-                ecc_pub_key = entry['ecc_pub_key']
+                CT_padded_key_name = chunk[i]['CT_padded_key_name']
+                ecc_pub_key = chunk[i]['ecc_pub_key']
 
                 # CP-ABE Decryption to get padded AES key
-                padded_aes_key = dec_key_cpabe(CT_padded, PG_cpabe_sk, "re", dup=None, n=None)
+                # This part is the broken one for parallel (padded_aes_key)
+                padded_aes_key = dec_key_cpabe(CT_padded_key_name, PG_cpabe_sk, "re", lock)
 
+                # Check if decryption failed
+                if not padded_aes_key:
+                    print(f"Decryption failed for chunk_id: {i}")
+                    continue
+                
                 # Generate random key and encrypt it using ElGamal with the ECC public key
                 k = b'12345678901234567890'
                 enc_k = elgamal.encrypt(ecc_pub_key, k)
@@ -234,8 +231,8 @@ class MJ18(ABEncMultiAuth):
                 end = time.time()
                 reencryption_time += (end - start)
 
-                # Append results with the id for proper sorting later
-                return_dict[chunk_id] = {
+                # Append results with the chunk_id for proper sorting later
+                return_dict[i] = {
                     'RE_padded_aes_key': RE_padded_aes_key,
                     'enc_k': {
                         'c1': groupObj.serialize(enc_k['c1']),
@@ -261,9 +258,20 @@ class MJ18(ABEncMultiAuth):
 
         print('-------------------Decryption aes for RE_padded_aes_key-------------------')
         padded_aes_key = dec_aes(RE_padded_aes_key, k)
-
+        
+        # try with temp_padded_key
+        n = ROUND
+        temp_path = os.path.join(KEY_PATH, f'temp_padded_key_0_{n}.bin')
+        n += 1
+        with open(temp_path, 'rb') as f:
+            check_padded_dec_key = f.read()
+            if check_padded_dec_key == padded_aes_key:
+                print('In decryption2: correct padded_key')
+            else:
+                print('In decryption2: wrong padded_key')
         # Step 2: Unpad AES KEY and decrypt file with unpadded AES KEY
         aes_key = unpad_aes_key(padded_aes_key, self.start_pad_size, self.end_pad_size)
+        #aes_key = unpad_aes_key(check_padded_dec_key, self.start_pad_size, self.end_pad_size)
 
         # Step 3: decrypt CT EHR using AES key
         print('-------------------Decryption aes for CT_EHR-------------------')
@@ -294,14 +302,17 @@ def dec_aes(CT, key):
     symmetric_key = SymmetricCryptoAbstraction(key)
     m = symmetric_key.decrypt(CT)
     
-    print(f'\nndec_aes m: {m}')
+    print('\n-------------------Decryption aes-------------------')
+    print(f'dec_aes m: {m}')
     print(f'dec_aes CT: {CT}')
     print(f'dec_aes key: {key}')
     return m
 
 def pad_aes_key(aes_key, start_pad_size, end_pad_size):
-    start_padding = os.urandom(start_pad_size)  
-    end_padding = os.urandom(end_pad_size)      
+    # start_padding = os.urandom(start_pad_size)  
+    # end_padding = os.urandom(end_pad_size)      
+    start_padding = b'1234567890123456'
+    end_padding = b'1234567890123456'
     
     padded_aes_key = start_padding + aes_key + end_padding
     return padded_aes_key
@@ -313,7 +324,9 @@ def unpad_aes_key(padded_aes_key, start_pad_size, end_pad_size):
 
 def enc_key_cpabe(padded_key, policy, file_size, cpabe_pk, dub, n):
     # Write the padded key to a temporary file
-    with open('temp_padded_key.bin', 'wb') as f:
+    print('check padded_key 1: ', padded_key)
+    temp_path = os.path.join(KEY_PATH, f'temp_padded_key_{dub}_{n}.bin')
+    with open(temp_path, 'wb') as f:
         f.write(padded_key)
     
     # Use the CP-ABE Docker image to encrypt the key
@@ -322,10 +335,30 @@ def enc_key_cpabe(padded_key, policy, file_size, cpabe_pk, dub, n):
     output_path = os.path.join(KEY_PATH, CT_padded_key_name)
 
     # Perform CP-ABE encryption
-    subprocess.run([cpabe_enc, '-k', cpabe_pk, 'temp_padded_key.bin', policy, '-o', output_path], check=True)
+    subprocess.run([cpabe_enc, '-k', cpabe_pk, temp_path, policy, '-o', output_path], check=True)
+    
+    # Perform CP-ABE decryption
+    print('+==========================check right after enc_key_cpabe====================================+')
+    cpabe_dec = os.path.join(CPABE_PATH, 'cpabe-dec')
+    cpabe_sk =  PG_cpabe_sk
+    SECRET_KEY_PATH = os.path.join(KEY_PATH, cpabe_sk)
+    input_path = output_path
+    output2_path = os.path.join(KEY_PATH, f'dec_{CT_padded_key_name}')
+    subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, SECRET_KEY_PATH, input_path, "-o", output2_path])
+    try:
+        with open(output2_path, 'rb') as f:
+            check_padded_dec_key = f.read()
+            if check_padded_dec_key == padded_key:
+                print('In enc_key_cpabe: correct padded_key')
+                with open(temp_path, 'wb') as f:
+                    f.write(check_padded_dec_key)
+            else:
+                print('In enc_key_cpabe: wrong padded_key')
+    except:
+        print(f'read file error with path: {output2_path}')
     
     # Clean up the temporary file
-    os.remove('temp_padded_key.bin')
+    # os.remove(f'temp_padded_key_{dub}_{n}.bin')
 
     return CT_padded_key_name
 
@@ -358,37 +391,52 @@ def dec_key_cpabe_old(CT_padded_key_name, cpabe_sk, mode):
 
     return padded_aes_key
     
-def dec_key_cpabe(CT_padded_key_name, cpabe_sk, mode, dup, n):
-    # CPABE & PK path
+def dec_key_cpabe(CT_padded_key_name, cpabe_sk, mode, lock):
     cpabe_dec = os.path.join(CPABE_PATH, 'cpabe-dec')
     SECRET_KEY_PATH = os.path.join(KEY_PATH, cpabe_sk) 
 
     # Input path (CT_padded_key)
     input_path = os.path.join(KEY_PATH, CT_padded_key_name)
+    n = ROUND
+    #input_path = os.path.join(KEY_PATH, f'temp_padded_key_0_{n}.bin')
 
     # Output path (padded_key)
     prefix = "enc_padded_aes_key_"
-    file_size = CT_padded_key_name[len(prefix):]
+    duplicate = CT_padded_key_name[len(prefix):]
     if mode == "dec":
-        padded_key_name = "dec_padded_aes_key_" + str(file_size) + "_" + str(dup) + "_" + str(n)
+        padded_key_name = f"dec_padded_aes_key_{duplicate}"
     elif mode == "re":
-        padded_key_name = "dec_re_padded_aes_key_" + str(file_size) + "_" + str(dup) + "_" + str(n)
+        padded_key_name = f"dec_re_padded_aes_key_{duplicate}"
     output_path = os.path.join(KEY_PATH, padded_key_name)
 
-    # Perform CP-ABE decryption
-    subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, SECRET_KEY_PATH, input_path, "-o", output_path])
-    
-    # Read the padded_key to return
-    try:
-        with open(output_path, 'rb') as f:
-            padded_aes_key = f.read()
-    except:
-        print('''
-              🚨🚨🚨🚨🚨🚨🚨🚨🚨
-               ⛔⛔⛔ERROR⛔⛔⛔
-              🚨🚨🚨🚨🚨🚨🚨🚨🚨''')
+    result = subprocess.run(
+        [cpabe_dec, "-k", PUB_KEY_PATH, SECRET_KEY_PATH, input_path, "-o", output_path], check= True
+    )
 
-    return padded_aes_key
+    if result.returncode != 0:
+        print(f"Error in CP-ABE decryption: {result.stderr.decode('utf-8')}")
+        return None
+
+    # Use the lock to ensure exclusive access to the file
+    with lock:
+        try:
+            print(f'+==========================check right after dec_key_cpabe====================================+')
+            with open(output_path, 'rb') as f:
+                padded_aes_key = f.read()
+            with open(f'temp_padded_key_0_{n}.bin', 'rb') as f:
+               check_padded_dec_key = f.read()
+               n += 1
+            if padded_aes_key == check_padded_dec_key:
+               print('In dec_key_cpabe: correct padded_key')
+            else:
+               print('In dec_key_cpabe: wrong padded_key')
+               print (f'padded_aes_key: {padded_aes_key}')
+               print (f'check_padded_dec_key: {check_padded_dec_key}')
+        except Exception as e:
+            print(f"Error reading decrypted key file: {str(e)}")
+            return None
+        
+        return padded_aes_key
 
 def setup_cpabe():
     cpabe_setup_path = os.path.join(CPABE_PATH, 'cpabe-setup')
@@ -489,17 +537,13 @@ def main():
 
                     # 2. Key Generation
                     ecc_pub_key, ecc_priv_key, aes_key, cpabe_pk, cpabe_sk, key_time = ssxehr.keygen(file_size, dup, n)
-                    # ecc_pub_key_dict.append(ecc_pub_key)
-                    # ecc_priv_key_dict.append(ecc_priv_key)
 
                     # 3. Encryption
                     policy = "((A and B) or (C and D)) and E"
                     CT_EHR, CT_padded_key_name, enc_time = ssxehr.encryption(EHR, aes_key, cpabe_pk, policy, file_size, dup, n)
-                    # CT_EHR_dict.append({'n': n, 'CT_EHR': CT_EHR})
-                    # CT_padded_key_name_dict.append({'n': n, 'dup': dup, 'CT_padded': CT_padded_key_name})
                     
                     # 4. Concat all required element
-                    all_list[n] = {'CT_EHR': CT_EHR, 'CT_padded': CT_padded_key_name, 'ecc_pub_key': ecc_pub_key, 'ecc_priv_key': ecc_priv_key, 'RE_padded_aes_key':'', 'enc_k':''}
+                    all_list[n] = {'CT_EHR': CT_EHR, 'CT_padded_key_name': CT_padded_key_name, 'ecc_pub_key': ecc_pub_key, 'ecc_priv_key': ecc_priv_key, 'RE_padded_aes_key':'', 'enc_k':''}
                     
                                                
                     # 5. Re-encryption
@@ -527,7 +571,7 @@ def main():
                 # Extract necessary information directly from all_list
                 EHR_output2 = []
                 # print(f'All list: {all_list}')
-
+                
                 for n in range(duplicate[dup]):
                     # Access the required elements from all_list
                     ct_ehr = all_list[n]['CT_EHR']
@@ -545,7 +589,7 @@ def main():
 
                     if enc_k and re_padded_aes_key and priv_key and pub_key:
                         EHR, dec2_time = ssxehr.decryption2(ct_ehr, re_padded_aes_key, enc_k, pub_key, priv_key)
-                        print(f'\n +++++ check after decryption2{n+1} \nEHR: {EHR}')
+                        print(f'\n +++++ check after decryption2: {n+1} \nEHR: {EHR}')
                         EHR_output2.append(EHR)
                     else:
                         print(f"Missing data for decryption for file number {n}")
