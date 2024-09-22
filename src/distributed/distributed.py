@@ -486,17 +486,17 @@ def create_test_files(file_sizes, file_size_select, duplicate):
 
 def main():
     groupObj = PairingGroup('SS512')
-    file_sizes = [20, 50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
-    # duplicate = [10, 100, 1000, 10000, 100000]
-    duplicate = [10, 100, 500]
+    file_sizes = [50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
+    duplicate = [10, 100, 1000, 10000, 100000]
+    # duplicate = [10, 100, 500]
     # duplicate = [10]
-    seq = 1
+    seq = 3
     input_file_dir = '../sample/input_distributed/'
     output_file_dir = '../sample/output_distributed/'
     output_txt = './ssxehr_parallel.txt'
     
     file_size_select, proxy = distributed_test()
-    create_test_files(file_sizes, file_size_select, duplicate[2])
+    create_test_files(file_sizes, file_size_select, duplicate[4])
     
     all_list = {}
         
