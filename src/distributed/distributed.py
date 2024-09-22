@@ -29,6 +29,10 @@ CPABE_PATH = './cpabe-0.11'
 
 PG_cpabe_sk = "proxy_sk"
 
+def add_round():
+    global ROUND
+    ROUND += 1
+    
 class MJ18(ABEncMultiAuth):
     def __init__(self, groupObj, verbose=False):
         ABEncMultiAuth.__init__(self)
@@ -252,6 +256,7 @@ class MJ18(ABEncMultiAuth):
 
     def decryption2(self, CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key):
         start = time.time()
+        print(f'\n ========================================================> Decryption 2')
 
         # Step 1: decrypt padded AES KEY with ECC private key
         k = self.elgamal.decrypt(ecc_pub_key, ecc_priv_key, enc_k)
@@ -260,15 +265,15 @@ class MJ18(ABEncMultiAuth):
         padded_aes_key = dec_aes(RE_padded_aes_key, k)
         
         # try with temp_padded_key
-        n = ROUND
-        temp_path = os.path.join(KEY_PATH, f'temp_padded_key_0_{n}.bin')
-        n += 1
-        with open(temp_path, 'rb') as f:
-            check_padded_dec_key = f.read()
-            if check_padded_dec_key == padded_aes_key:
-                print('In decryption2: correct padded_key')
-            else:
-                print('In decryption2: wrong padded_key')
+        # temp_path = os.path.join(KEY_PATH, f'temp_padded_key_0_{ROUND}.bin')
+        # print(f'temp_path: {temp_path}')
+        # with open(temp_path, 'rb') as f:
+        #     check_padded_dec_key = f.read()
+        #     if check_padded_dec_key == padded_aes_key:
+        #         print('In decryption2: correct padded_key')
+        #     else:
+        #         print('In decryption2: wrong padded_key')
+        
         # Step 2: Unpad AES KEY and decrypt file with unpadded AES KEY
         aes_key = unpad_aes_key(padded_aes_key, self.start_pad_size, self.end_pad_size)
         #aes_key = unpad_aes_key(check_padded_dec_key, self.start_pad_size, self.end_pad_size)
@@ -276,12 +281,6 @@ class MJ18(ABEncMultiAuth):
         # Step 3: decrypt CT EHR using AES key
         print('-------------------Decryption aes for CT_EHR-------------------')
         EHR = dec_aes(CT_EHR, aes_key)
-        
-        print(f'\n => Decryption 2 \nEHR: {EHR}')
-        print(f'k: {k}')
-        print(f'RE_padded_aes_key: {RE_padded_aes_key}')
-        print(f'padded_aes_key: {padded_aes_key}')
-        print(f'aes_key: {len(aes_key)}')
 
         end = time.time()
         rt = end - start
@@ -402,30 +401,26 @@ def dec_key_cpabe(CT_padded_key_name, cpabe_sk, mode, lock):
 
     # Output path (padded_key)
     prefix = "enc_padded_aes_key_"
-    duplicate = CT_padded_key_name[len(prefix):]
+    suffix = CT_padded_key_name[len(prefix):]
     if mode == "dec":
-        padded_key_name = f"dec_padded_aes_key_{duplicate}"
+        padded_key_name = f"dec_padded_aes_key_{suffix}"
     elif mode == "re":
-        padded_key_name = f"dec_re_padded_aes_key_{duplicate}"
+        padded_key_name = f"dec_re_padded_aes_key_{suffix}"
     output_path = os.path.join(KEY_PATH, padded_key_name)
 
-    result = subprocess.run(
-        [cpabe_dec, "-k", PUB_KEY_PATH, SECRET_KEY_PATH, input_path, "-o", output_path], check= True
-    )
-
-    if result.returncode != 0:
-        print(f"Error in CP-ABE decryption: {result.stderr.decode('utf-8')}")
-        return None
+    subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, SECRET_KEY_PATH, input_path, "-o", output_path], check=True)
 
     # Use the lock to ensure exclusive access to the file
     with lock:
         try:
             print(f'+==========================check right after dec_key_cpabe====================================+')
+            temp_path = os.path.join(KEY_PATH, f'temp_padded_key_0_{n}.bin')
+            print(f'temp_path: {temp_path}')
             with open(output_path, 'rb') as f:
                 padded_aes_key = f.read()
-            with open(f'temp_padded_key_0_{n}.bin', 'rb') as f:
-               check_padded_dec_key = f.read()
-               n += 1
+            with open(temp_path, 'rb') as f:
+                check_padded_dec_key = f.read()
+                add_round()
             if padded_aes_key == check_padded_dec_key:
                print('In dec_key_cpabe: correct padded_key')
             else:
@@ -493,14 +488,15 @@ def main():
     groupObj = PairingGroup('SS512')
     file_sizes = [20, 50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
     # duplicate = [10, 100, 1000, 10000, 100000]
-    duplicate = [10, 100, 500]
+    # duplicate = [10, 100, 500]
+    duplicate = [10]
     seq = 1
     input_file_dir = '../sample/input_distributed/'
     output_file_dir = '../sample/output_distributed/'
     output_txt = './ssxehr_parallel.txt'
     
     file_size_select, proxy = distributed_test()
-    create_test_files(file_sizes, file_size_select, duplicate[2])
+    create_test_files(file_sizes, file_size_select, duplicate[0])
     
     all_list = {}
         
@@ -574,6 +570,7 @@ def main():
                 
                 for n in range(duplicate[dup]):
                     # Access the required elements from all_list
+                    print(f'len of all_list: {len(all_list)}')
                     ct_ehr = all_list[n]['CT_EHR']
                     enc_k = all_list[n]['enc_k']
                     re_padded_aes_key = all_list[n]['RE_padded_aes_key']
@@ -581,11 +578,6 @@ def main():
                     pub_key = all_list[n]['ecc_pub_key']
                     
                     print('\n=================================== Loop of decryption2 of paralell', n)
-                    print(f'CT_EHR: {ct_ehr}')
-                    print(f'enc_k: {enc_k}')
-                    print(f're_padded_aes_key: {re_padded_aes_key}')
-                    print(f'priv_key: {priv_key}')
-                    print(f'pub_key: {pub_key}')
 
                     if enc_k and re_padded_aes_key and priv_key and pub_key:
                         EHR, dec2_time = ssxehr.decryption2(ct_ehr, re_padded_aes_key, enc_k, pub_key, priv_key)
@@ -595,6 +587,7 @@ def main():
                         print(f"Missing data for decryption for file number {n}")
 
                 # Write the output files
+                print(f'len of EHR_output2: {len(EHR_output2)}')
                 for n in range(duplicate[dup]):
                     output2_file = f'{output_file_dir}output2_file_{file_size}_{n+1}.bin'
                     with open(output2_file, 'wb') as f_out:

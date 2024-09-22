@@ -1,2 +1,2 @@
 File Size  File amount PREAveTime           ParallelPREAveTime  
-        20         10   0.0000000000000000   0.0968177318572998
+        20         10   0.0000000000000000   0.0908889770507812
