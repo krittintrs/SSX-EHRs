@@ -71,8 +71,8 @@ class MJ18(ABEncMultiAuth):
         # AES Key Gen
         key_name = "aes_key_" + str(file_size) + "_" + str(dup) + "_" + str(n)
         AES_KEY_PATH = os.path.join(KEY_PATH, key_name)
-        # aes_key = os.urandom(self.aes_key_size)
-        aes_key = b'12345678901234567890123456789012'
+        aes_key = os.urandom(self.aes_key_size)
+        # aes_key = b'12345678901234567890123456789012'
 
         with open(AES_KEY_PATH, 'wb') as f:
             f.write(aes_key)
@@ -229,7 +229,7 @@ class MJ18(ABEncMultiAuth):
                 # Generate random key and encrypt it using ElGamal with the ECC public key
                 k = b'12345678901234567890'
                 enc_k = elgamal.encrypt(ecc_pub_key, k)
-                print('***************** encryption aes(k of ecc) for Repadded_aes_key *****************')
+                # print('***************** encryption aes(k of ecc) for Repadded_aes_key *****************')
                 RE_padded_aes_key = enc_aes(padded_aes_key, k)
 
                 end = time.time()
@@ -256,12 +256,12 @@ class MJ18(ABEncMultiAuth):
 
     def decryption2(self, CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key):
         start = time.time()
-        print(f'\n ========================================================> Decryption 2')
+        # print(f'\n ========================================================> Decryption 2')
 
         # Step 1: decrypt padded AES KEY with ECC private key
         k = self.elgamal.decrypt(ecc_pub_key, ecc_priv_key, enc_k)
 
-        print('-------------------Decryption aes for RE_padded_aes_key-------------------')
+        # print('-------------------Decryption aes for RE_padded_aes_key-------------------')
         padded_aes_key = dec_aes(RE_padded_aes_key, k)
         
         # try with temp_padded_key
@@ -279,7 +279,7 @@ class MJ18(ABEncMultiAuth):
         #aes_key = unpad_aes_key(check_padded_dec_key, self.start_pad_size, self.end_pad_size)
 
         # Step 3: decrypt CT EHR using AES key
-        print('-------------------Decryption aes for CT_EHR-------------------')
+        # print('-------------------Decryption aes for CT_EHR-------------------')
         EHR = dec_aes(CT_EHR, aes_key)
 
         end = time.time()
@@ -291,9 +291,9 @@ def enc_aes(m, key):
     symmetric_key = SymmetricCryptoAbstraction(key)
     CT = symmetric_key.encrypt(m)
     
-    print(f'\nenc_aes m: {m}')
-    print(f'enc_aes CT: {CT}')
-    print(f'enc_aes key: {key}')
+    # print(f'\nenc_aes m: {m}')
+    # print(f'enc_aes CT: {CT}')
+    # print(f'enc_aes key: {key}')
 
     return CT
 
@@ -301,17 +301,17 @@ def dec_aes(CT, key):
     symmetric_key = SymmetricCryptoAbstraction(key)
     m = symmetric_key.decrypt(CT)
     
-    print('\n-------------------Decryption aes-------------------')
-    print(f'dec_aes m: {m}')
-    print(f'dec_aes CT: {CT}')
-    print(f'dec_aes key: {key}')
+    # print('\n-------------------Decryption aes-------------------')
+    # print(f'dec_aes m: {m}')
+    # print(f'dec_aes CT: {CT}')
+    # print(f'dec_aes key: {key}')
     return m
 
 def pad_aes_key(aes_key, start_pad_size, end_pad_size):
-    # start_padding = os.urandom(start_pad_size)  
-    # end_padding = os.urandom(end_pad_size)      
-    start_padding = b'1234567890123456'
-    end_padding = b'1234567890123456'
+    start_padding = os.urandom(start_pad_size)  
+    end_padding = os.urandom(end_pad_size)      
+    # start_padding = b'1234567890123456'
+    # end_padding = b'1234567890123456'
     
     padded_aes_key = start_padding + aes_key + end_padding
     return padded_aes_key
@@ -323,7 +323,7 @@ def unpad_aes_key(padded_aes_key, start_pad_size, end_pad_size):
 
 def enc_key_cpabe(padded_key, policy, file_size, cpabe_pk, dub, n):
     # Write the padded key to a temporary file
-    print('check padded_key 1: ', padded_key)
+    # print('check padded_key 1: ', padded_key)
     temp_path = os.path.join(KEY_PATH, f'temp_padded_key_{dub}_{n}.bin')
     with open(temp_path, 'wb') as f:
         f.write(padded_key)
@@ -337,24 +337,24 @@ def enc_key_cpabe(padded_key, policy, file_size, cpabe_pk, dub, n):
     subprocess.run([cpabe_enc, '-k', cpabe_pk, temp_path, policy, '-o', output_path], check=True)
     
     # Perform CP-ABE decryption
-    print('+==========================check right after enc_key_cpabe====================================+')
-    cpabe_dec = os.path.join(CPABE_PATH, 'cpabe-dec')
-    cpabe_sk =  PG_cpabe_sk
-    SECRET_KEY_PATH = os.path.join(KEY_PATH, cpabe_sk)
-    input_path = output_path
-    output2_path = os.path.join(KEY_PATH, f'dec_{CT_padded_key_name}')
-    subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, SECRET_KEY_PATH, input_path, "-o", output2_path])
-    try:
-        with open(output2_path, 'rb') as f:
-            check_padded_dec_key = f.read()
-            if check_padded_dec_key == padded_key:
-                print('In enc_key_cpabe: correct padded_key')
-                with open(temp_path, 'wb') as f:
-                    f.write(check_padded_dec_key)
-            else:
-                print('In enc_key_cpabe: wrong padded_key')
-    except:
-        print(f'read file error with path: {output2_path}')
+    # print('+==========================check right after enc_key_cpabe====================================+')
+    # cpabe_dec = os.path.join(CPABE_PATH, 'cpabe-dec')
+    # cpabe_sk =  PG_cpabe_sk
+    # SECRET_KEY_PATH = os.path.join(KEY_PATH, cpabe_sk)
+    # input_path = output_path
+    # output2_path = os.path.join(KEY_PATH, f'dec_{CT_padded_key_name}')
+    # subprocess.run([cpabe_dec, "-k", PUB_KEY_PATH, SECRET_KEY_PATH, input_path, "-o", output2_path])
+    # try:
+    #     with open(output2_path, 'rb') as f:
+    #         check_padded_dec_key = f.read()
+    #         if check_padded_dec_key == padded_key:
+    #             print('In enc_key_cpabe: correct padded_key')
+    #             with open(temp_path, 'wb') as f:
+    #                 f.write(check_padded_dec_key)
+    #         else:
+    #             print('In enc_key_cpabe: wrong padded_key')
+    # except:
+    #     print(f'read file error with path: {output2_path}')
     
     # Clean up the temporary file
     # os.remove(f'temp_padded_key_{dub}_{n}.bin')
@@ -413,20 +413,20 @@ def dec_key_cpabe(CT_padded_key_name, cpabe_sk, mode, lock):
     # Use the lock to ensure exclusive access to the file
     with lock:
         try:
-            print(f'+==========================check right after dec_key_cpabe====================================+')
-            temp_path = os.path.join(KEY_PATH, f'temp_padded_key_0_{n}.bin')
-            print(f'temp_path: {temp_path}')
+            # print(f'+==========================check right after dec_key_cpabe====================================+')
+            # temp_path = os.path.join(KEY_PATH, f'temp_padded_key_0_{n}.bin')
+            # print(f'temp_path: {temp_path}')
             with open(output_path, 'rb') as f:
                 padded_aes_key = f.read()
-            with open(temp_path, 'rb') as f:
-                check_padded_dec_key = f.read()
-                add_round()
-            if padded_aes_key == check_padded_dec_key:
-               print('In dec_key_cpabe: correct padded_key')
-            else:
-               print('In dec_key_cpabe: wrong padded_key')
-               print (f'padded_aes_key: {padded_aes_key}')
-               print (f'check_padded_dec_key: {check_padded_dec_key}')
+        #     with open(temp_path, 'rb') as f:
+        #         check_padded_dec_key = f.read()
+        #         add_round()
+        #     if padded_aes_key == check_padded_dec_key:
+        #        print('In dec_key_cpabe: correct padded_key')
+        #     else:
+        #        print('In dec_key_cpabe: wrong padded_key')
+        #        print (f'padded_aes_key: {padded_aes_key}')
+        #        print (f'check_padded_dec_key: {check_padded_dec_key}')
         except Exception as e:
             print(f"Error reading decrypted key file: {str(e)}")
             return None
@@ -488,15 +488,15 @@ def main():
     groupObj = PairingGroup('SS512')
     file_sizes = [20, 50_000, 100_000, 200_000, 400_000, 800_000, 1_600_000]
     # duplicate = [10, 100, 1000, 10000, 100000]
-    # duplicate = [10, 100, 500]
-    duplicate = [10]
+    duplicate = [10, 100, 500]
+    # duplicate = [10]
     seq = 1
     input_file_dir = '../sample/input_distributed/'
     output_file_dir = '../sample/output_distributed/'
     output_txt = './ssxehr_parallel.txt'
     
     file_size_select, proxy = distributed_test()
-    create_test_files(file_sizes, file_size_select, duplicate[0])
+    create_test_files(file_sizes, file_size_select, duplicate[2])
     
     all_list = {}
         
@@ -543,14 +543,14 @@ def main():
                     
                                                
                     # 5. Re-encryption
-                    # RE_padded_aes_key, enc_k, pre_time = ssxehr.reencryption(CT_padded_key_name, ecc_pub_key)
+                    RE_padded_aes_key, enc_k, pre_time = ssxehr.reencryption(CT_padded_key_name, ecc_pub_key)
                     
                     # 6 check decrypt 2 for non-parallell
-                    # EHR, dec2_time = ssxehr.decryption2(CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key)
+                    EHR, dec2_time = ssxehr.decryption2(CT_EHR, RE_padded_aes_key, enc_k, ecc_pub_key, ecc_priv_key)
                     
-                    # output_file = f'{output_file_dir}output_file_{file_size}_{n+1}.bin'
-                    # with open(output_file, 'wb') as f_out:
-                    #     f_out.write(EHR)
+                    output_file = f'{output_file_dir}output_file_{file_size}_{n+1}.bin'
+                    with open(output_file, 'wb') as f_out:
+                        f_out.write(EHR)
                     # input_file = f'{input_file_dir}input_file_{file_size}_{n+1}.bin'
                     # print(f' input file: {input_file}, output file: {output_file}')
                     # if compare_files(input_file, output_file):
@@ -558,7 +558,7 @@ def main():
                     # else:
                     #     print(f'          File decryption 2 ❌❌failed❌❌ file size: {file_size}')
                     
-                    # pre_tot += pre_time
+                    pre_tot += pre_time
                 
                 # 7.1 Re-encryption parallel
                 all_list, parallellpre_time = ssxehr.parallel_reencryption(all_list, proxy)
@@ -570,24 +570,23 @@ def main():
                 
                 for n in range(duplicate[dup]):
                     # Access the required elements from all_list
-                    print(f'len of all_list: {len(all_list)}')
                     ct_ehr = all_list[n]['CT_EHR']
                     enc_k = all_list[n]['enc_k']
                     re_padded_aes_key = all_list[n]['RE_padded_aes_key']
                     priv_key = all_list[n]['ecc_priv_key']  # Assuming 'ecc_priv_key' is added to all_list
                     pub_key = all_list[n]['ecc_pub_key']
                     
-                    print('\n=================================== Loop of decryption2 of paralell', n)
+                    # print('\n=================================== Loop of decryption2 of paralell', n)
 
                     if enc_k and re_padded_aes_key and priv_key and pub_key:
                         EHR, dec2_time = ssxehr.decryption2(ct_ehr, re_padded_aes_key, enc_k, pub_key, priv_key)
-                        print(f'\n +++++ check after decryption2: {n+1} \nEHR: {EHR}')
+                        # print(f'\n +++++ check after decryption2: {n+1} \nEHR: {EHR}')
                         EHR_output2.append(EHR)
                     else:
                         print(f"Missing data for decryption for file number {n}")
 
                 # Write the output files
-                print(f'len of EHR_output2: {len(EHR_output2)}')
+                # print(f'len of EHR_output2: {len(EHR_output2)}')
                 for n in range(duplicate[dup]):
                     output2_file = f'{output_file_dir}output2_file_{file_size}_{n+1}.bin'
                     with open(output2_file, 'wb') as f_out:
@@ -596,10 +595,10 @@ def main():
                     input_file = f'{input_file_dir}input_file_{file_size}_{n+1}.bin'
                     # print(f' input file: {input_file}, output2 file: {output2_file}')
                     
-                    if compare_files(input_file, output2_file):
-                        print(f'          File decryption 2 ✅✅successful✅✅ file size: {file_size}')
-                    else:
-                        print(f'          File decryption 2 ❌❌failed❌❌ file size: {file_size}')
+                    # if compare_files(input_file, output2_file):
+                    #     print(f'          File decryption 2 ✅✅successful✅✅ file size: {file_size}')
+                    # else:
+                    #     print(f'          File decryption 2 ❌❌failed❌❌ file size: {file_size}')
                     
                 # Calculate time
                 parallellpre_tot += parallellpre_time
