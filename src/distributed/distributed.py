@@ -602,11 +602,9 @@ def main():
                     
                 # Calculate time
                 parallellpre_tot += parallellpre_time
-
-                total_time = parallellpre_time
                 total_pre_time += pre_tot
-                print('Total pre time for this run: ', total_pre_time)
-                print('Total parallel time for this run: ', total_time)
+                print('Total pre time for this run: ', pre_tot)
+                print('Total parallel time for this run: ', parallellpre_time)
 
             # Write the average times for the current file size
             avg_pre_time = total_pre_time / seq
